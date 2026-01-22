@@ -1,5 +1,5 @@
-# 단계 순서만 책임짐
-# 실패 처리 로직은 나중에 추가
+
+#외부 엔진에서 호출하는 진입점
 from .state_machine import StateMachine
 
 class WorkflowRunner:
