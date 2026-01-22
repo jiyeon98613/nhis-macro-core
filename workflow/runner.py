@@ -1,3 +1,5 @@
+# 단계 순서만 책임짐
+# 실패 처리 로직은 나중에 추가
 from .state_machine import StateMachine
 
 class WorkflowRunner:
