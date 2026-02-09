@@ -37,6 +37,7 @@ class Doctor(Base):
 
     doc_id = Column(Integer, primary_key=True, autoincrement=True)
     hosp_id = Column(Integer, ForeignKey("hospitals.hosp_id")) # 외래키 연결
+    hosp_code = Column(String(20))
     doc_name = Column(String, nullable=False)
     license_num = Column(String, unique=True, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
