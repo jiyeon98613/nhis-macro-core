@@ -48,7 +48,7 @@ class DocumentTemplate(Base):
     identifier_keyword = Column(String)          # 양식 식별 키워드
     created_at = Column(DateTime, server_default=func.now())
 
-class Field(Base):
+class DocumentField(Base):
     __tablename__ = "document_fields"
     
     field_id = Column(Integer, primary_key=True, autoincrement=True)
@@ -89,7 +89,7 @@ class Patient(Base):
     chart_num = Column(String, unique=True, nullable=False)
     # [상태] 시스템 로직이 판단하여 업데이트
     status = Column(String, default="ACTIVE") #TEMP # ACTIVE, PAUSE(분할), STOP
-    compliance_status = Column(String, default="BEFORE") # BEFORE, ING(분할), PASS
+    compliance_status = Column(String, default="PRE") # PRE, ING(분할), PASS
     # [데이터군 A: 파일에서 추출됨]
     # [인적 사항 캐싱] 청구 시 매번 파일이나 EMR을 뒤지지 않도록 저장
     # FileScan -> OCR -> Validation 후 여기에 저장
@@ -131,7 +131,7 @@ class PatientDocument(Base):
     doc_type = Column(String)     # ps(처방전), rp(보고서), ct(계약서)
     issue_date = Column(String)    # 파일명에 들어간 날짜 (20260202)
     managed_path = Column(String)  # 실제 저장 위치
-    file_status = Column(String)   # COPIED, OCR_DONE, ERROR
+    file_status = Column(String)   # COPIED, OCR_DONE, ERROR, DUPLICATE_CHECK, MANUAL_REVIEW
     created_at = Column(DateTime, server_default=func.now())
 
 class ExtractedData(Base):
