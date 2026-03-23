@@ -1,6 +1,7 @@
 # nhis-macro-core/core/db_manager.py
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
+from datetime import datetime
 
 Base = declarative_base()
 
@@ -44,15 +45,26 @@ class DBManager:
             raise ValueError("🗄️ Runtime DB가 초기화되지 않았습니다.")
         return self.RuntimeSession()
 
-    def log_event(self, session, operator, action, table, details=""):
-        """감사 로그 생성 (AuditLog는 주로 onboarding.db에 쌓습니다)"""
-        from core.models import AuditLog
-        new_log = AuditLog(
-            operator_name=operator,
-            action=action,
-            target_table=table,
-            details=details
-        )
-        session.add(new_log)
+    def log_event(self, op_id: int, action: str, target_id: int = None, reason: str = ""):
+        """별도의 세션을 열어 즉시 로그를 남기고 닫습니다."""
+    from core.models import AuditLog
+    from datetime import datetime
+
+        session = self.get_onboarding_session()
+        try:
+            new_log = AuditLog(
+                op_id=op_id, 
+                action=action,
+                target_id=target_id,
+                reason=reason,
+                access_time=datetime.now()
+            )
+            session.add(new_log)
+            session.commit()  # 반드시 커밋해야 DB에 반영됨.
+        except Exception as e:
+            session.rollback()
+            print(f"⚠️ 로그 기록 실패: {e}")
+        finally:
+            session.close()
 
 db = DBManager()

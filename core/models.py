@@ -1,7 +1,10 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Float, Boolean
+from sqlalchemy.orm import relationship, declarative_base  
 from sqlalchemy.sql import func
 from core.db_manager import Base
+from datetime import datetime
 
+Base = declarative_base()
 # =================================================================
 # 1. Onboarding Data (기준 정보 - onboarding.db)
 # =================================================================
@@ -66,9 +69,11 @@ class Operator(Base):
 
     op_id = Column(Integer, primary_key=True, autoincrement=True)
     hosp_id = Column(Integer, ForeignKey("hospitals.hosp_id"))
-    name = Column(String, nullable=False)
-    role = Column(String) # ADMIN, STAFF
+    name = Column(String(50), nullable=False)
+    email = Column(String(100), unique=True)
+    role = Column(String(20)) # ADMIN, STAFF
     is_active = Column(Integer, default=1)
+    security = relationship("SecuritySetting", back_populates="operator", uselist=False)
 
 # =================================================================
 # 2. Runtime Data (실행 정보 - runtime.db)
@@ -246,3 +251,33 @@ class ExtractedData(Base):
     raw_key = Column(String)
     raw_value = Column(String)
     confidence = Column(Float)
+
+class AuditLog(Base):
+    __tablename__ = 'audit_logs'
+    
+    log_id = Column(Integer, primary_key=True, autoincrement=True)
+    op_id = Column(Integer, ForeignKey('operators.op_id')) # 누가(Operator ID)
+    action = Column(String(100))                          # 무엇을(작업명)
+    target_id = Column(Integer, nullable=True)            # 누구에게(환자 ID)
+    reason = Column(String(500))                          # 왜/상세내용
+    access_time = Column(DateTime, default=datetime.now)
+
+class SecuritySetting(Base):
+    __tablename__ = 'security_settings'
+    
+    id = Column(Integer, primary_key=True)
+    op_id = Column(Integer, ForeignKey('operators.op_id'), unique=True, nullable=False) # 운영자와 연결
+    password_hash = Column(String(255), nullable=False)
+    password_set_at = Column(DateTime, default=datetime.now)
+    # 관계 설정
+    operator = relationship("Operator", back_populates="security")
+
+class SystemLog(Base):
+    """프로그램 내부 오류 및 실행 상태 로깅용 테이블"""
+    __tablename__ = 'system_logs'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    level = Column(String(20))     # INFO, ERROR, WARNING
+    step_name = Column(String(100)) # 어느 단계에서 발생했는지
+    message = Column(Text)         # 에러 메시지 내용
+    created_at = Column(DateTime, default=datetime.now)
