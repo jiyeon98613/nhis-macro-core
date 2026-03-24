@@ -11,9 +11,13 @@ class StateMachine:
             step = self.steps[i]
             try:
                 step.run(context)
-                i += 1  # 성공 시 다음 단계로
+                step.flush_logs()   # ← 성공 시 로그 저장
+                i += 1              # 성공 시 다음 단계로
             except Exception as e:
+                step.flush_logs()   # ← 실패해도 여기까지의 로그는 저장
                 choice = step.handle_failure(e)
+                step.flush_logs()   # ← handle_failure에서 추가된 ERROR 로그도 저장
+                
                 
                 if choice == 'r':    # Retry: 현재 인덱스 유지 (루프 재시작)
                     print(f"🔄 [{step.name}] 재시도 중...")
