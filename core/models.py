@@ -1,15 +1,14 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Float, Boolean
 from sqlalchemy.orm import relationship, declarative_base  
 from sqlalchemy.sql import func
-from core.db_manager import Base
+from core.db_manager import OnboardingBase, RuntimeBase 
 from datetime import datetime
 
-Base = declarative_base()
 # =================================================================
 # 1. Onboarding Data (기준 정보 - onboarding.db)
 # =================================================================
 
-class Hospital(Base):
+class Hospital(OnboardingBase):
     """요양기관(병원) 마스터 정보"""
     __tablename__ = "hospitals"
 
@@ -19,7 +18,7 @@ class Hospital(Base):
     device_hwid = Column(String, nullable=True)             # 승인된 PC 식별값
     created_at = Column(DateTime, server_default=func.now())
 
-class Doctor(Base):
+class Doctor(OnboardingBase):
     """처방의 마스터 정보"""
     __tablename__ = "doctors"
 
@@ -30,7 +29,7 @@ class Doctor(Base):
     is_active = Column(Integer, default=1)
     created_at = Column(DateTime, server_default=func.now())
 
-class Manufacturer(Base):
+class Manufacturer(OnboardingBase):
     """양압기 제조/수입사 (예: 레즈메드, 필립스, 로벤스타인 등)"""
     __tablename__ = "manufacturers"
 
@@ -39,7 +38,7 @@ class Manufacturer(Base):
     country = Column(String) # 제조국
     created_at = Column(DateTime, server_default=func.now())
 
-class Vendor(Base):
+class Vendor(OnboardingBase):
     """양압기 렌탈 및 유지관리업체 (소매상)"""
     __tablename__ = "vendors"
 
@@ -51,7 +50,7 @@ class Vendor(Base):
     is_hospital_internal = Column(Boolean, default=False) # 병원 자체 관리 여부
     created_at = Column(DateTime, server_default=func.now())
 
-class Device(Base):
+class Device(OnboardingBase):
     """양압기 기기 마스터 정보"""
     __tablename__ = "devices"
 
@@ -63,7 +62,7 @@ class Device(Base):
     model_name = Column(String)
     created_at = Column(DateTime, server_default=func.now())
 
-class Operator(Base):
+class Operator(OnboardingBase):
     """시스템 운영자 계정"""
     __tablename__ = "operators"
 
@@ -75,11 +74,84 @@ class Operator(Base):
     is_active = Column(Integer, default=1)
     security = relationship("SecuritySetting", back_populates="operator", uselist=False)
 
+class AuditLog(OnboardingBase):
+    __tablename__ = 'audit_logs'
+    
+    log_id = Column(Integer, primary_key=True, autoincrement=True)
+    op_id = Column(Integer, ForeignKey('operators.op_id')) # 누가(Operator ID)
+    action = Column(String(100))                          # 무엇을(작업명)
+    target_id = Column(Integer, nullable=True)            # 누구에게(환자 ID)
+    reason = Column(String(500))                          # 왜/상세내용
+    access_time = Column(DateTime, default=datetime.now)
+
+class SecuritySetting(OnboardingBase):
+    __tablename__ = 'security_settings'
+    
+    id = Column(Integer, primary_key=True)
+    op_id = Column(Integer, ForeignKey('operators.op_id'), unique=True, nullable=False) # 운영자와 연결
+    password_hash = Column(String(255), nullable=False)
+    password_set_at = Column(DateTime, default=datetime.now)
+    # 관계 설정
+    operator = relationship("Operator", back_populates="security")
+
+class Approval(OnboardingBase):
+    """관리자 승인 기록 (법적 책임 소재)"""
+    __tablename__ = "approvals"
+
+    approval_id = Column(Integer, primary_key=True, autoincrement=True)
+    scope = Column(String, nullable=False)       # BATCH_SAVE, DELETE_LOG, FINAL_SUBMIT
+    target_id = Column(String, nullable=False)    # 승인 대상의 PK
+    approved_by = Column(Integer, ForeignKey("operators.op_id"), nullable=False)
+    approved_at = Column(DateTime, default=datetime.now)
+    detail = Column(Text)
+
+class DocumentTemplate(OnboardingBase):
+    """문서 양식 정의 (6종 대응) — OCR 추출의 기준점"""
+    __tablename__ = "document_templates"
+
+    temp_id = Column(Integer, primary_key=True, autoincrement=True)
+    hosp_id = Column(Integer, ForeignKey("hospitals.hosp_id"), nullable=False)
+    temp_name = Column(String, nullable=False)         # 예: 'ResMed_S10_Report'
+    doc_type = Column(String, nullable=False)           # ps, sr, ct, tx, rc, rt
+    vendor_name = Column(String)                        # 제조사 (ResMed, Philips 등)
+    identifier_keyword = Column(String)                 # 양식 식별용 고유 키워드
+    confidence_policy = Column(String, nullable=False)  # MANUAL_REQUIRED / AUTO_WITH_REVIEW
+    approved = Column(Integer, default=0)               # 관리자 승인 여부
+    created_at = Column(DateTime, server_default=func.now())
+
+    fields = relationship("DocumentField", back_populates="template")
+
+
+class DocumentField(OnboardingBase):
+    """양식별 추출 필드 정의 — 각 필드의 위치/패턴 정보"""
+    __tablename__ = "document_fields"
+
+    field_id = Column(Integer, primary_key=True, autoincrement=True)
+    temp_id = Column(Integer, ForeignKey("document_templates.temp_id"), nullable=False)
+    field_name = Column(String, nullable=False)         # start_date, reg_num 등
+    field_type = Column(String, nullable=False)         # DATE, TEXT, NUMBER
+    extract_method = Column(String, nullable=False)     # OCR, REGEX, KEYWORD
+    extract_rule = Column(String)                       # 정규표현식 패턴 등
+    is_required = Column(Integer, default=1)
+    created_at = Column(DateTime, server_default=func.now())
+
+    template = relationship("DocumentTemplate", back_populates="fields")
+
 # =================================================================
 # 2. Runtime Data (실행 정보 - runtime.db)
 # =================================================================
 
-class Patient(Base):
+class SystemLog(RuntimeBase):
+    """프로그램 내부 오류 및 실행 상태 로깅용 테이블"""
+    __tablename__ = 'system_logs'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    level = Column(String(20))     # INFO, ERROR, WARNING
+    step_name = Column(String(100)) # 어느 단계에서 발생했는지
+    message = Column(Text)         # 에러 메시지 내용
+    created_at = Column(DateTime, default=datetime.now)
+
+class Patient(RuntimeBase):
     """환자 기본 인적사항 및 고정 정보"""
     __tablename__ = "patients"
 
@@ -92,7 +164,7 @@ class Patient(Base):
     address = Column(String)
     created_at = Column(DateTime, server_default=func.now())
 
-class PatientDocument(Base):
+class PatientDocument(RuntimeBase):
     """문서 파일 메타데이터 및 저장 경로 관리"""
     __tablename__ = "patient_documents"
 
@@ -105,7 +177,7 @@ class PatientDocument(Base):
     file_status = Column(String)   # COPIED, OCR_DONE, FILTERED
     created_at = Column(DateTime, server_default=func.now())
 
-class Prescription(Base):
+class Prescription(RuntimeBase):
     """처방전 상세 데이터 (PS)"""
     __tablename__ = "prescriptions"
 
@@ -130,7 +202,7 @@ class Prescription(Base):
     hosp_name = Column(String)
     hosp_code = Column(String)
 
-class SleepReport(Base):
+class SleepReport(RuntimeBase):
     """수면보고서 데이터 (SR)"""
     __tablename__ = "sleep_reports"
 
@@ -142,7 +214,7 @@ class SleepReport(Base):
     pressure_val2 = Column(Float) 
     ahi = Column(Float)
 
-class Contract(Base):
+class Contract(RuntimeBase):
     """임대차 계약서 데이터 (CT)"""
     __tablename__ = "contracts"
 
@@ -152,7 +224,7 @@ class Contract(Base):
     end_date = Column(DateTime)
     device_serial = Column(String)
 
-class ReturnReceipt(Base):
+class ReturnReceipt(RuntimeBase):
     """기기 반납 확인서 (RT)"""
     __tablename__ = "return_receipts"
 
@@ -160,7 +232,7 @@ class ReturnReceipt(Base):
     doc_id = Column(Integer, ForeignKey("patient_documents.doc_id"))
     return_date = Column(DateTime)
 
-class TaxInvoice(Base):
+class TaxInvoice(RuntimeBase):
     """세금계산서 데이터 (TX)"""
     __tablename__ = "tax_invoices"
 
@@ -173,7 +245,7 @@ class TaxInvoice(Base):
     total_amount = Column(Integer)
     attachment_path = Column(String)
 
-class Receipt(Base):
+class Receipt(RuntimeBase):
     """현금영수증 데이터 (RC)"""
     __tablename__ = "receipts"
 
@@ -186,7 +258,7 @@ class Receipt(Base):
     total_amount = Column(Integer)
     attachment_path = Column(String)
 
-class Consumable(Base):
+class Consumable(RuntimeBase):
     """소모품 지급 이력"""
     __tablename__ = "consumables"
 
@@ -197,7 +269,7 @@ class Consumable(Base):
     c_price = Column(Integer)
     purchase_date = Column(DateTime)
 
-class Travel(Base):
+class Travel(RuntimeBase):
     """해외여행 이력"""
     __tablename__ = "travels"
 
@@ -207,7 +279,7 @@ class Travel(Base):
     entry_date = Column(DateTime)  # 입국일
     return_record_path = Column(String)
 
-class MonthlyUpdate(Base):
+class MonthlyUpdate(RuntimeBase):
     """환자별 월간 변동 및 문서 연결 마스터"""
     __tablename__ = "monthly_updates"
 
@@ -231,7 +303,7 @@ class MonthlyUpdate(Base):
     
     split_claim_count = Column(Integer, default=1) 
 
-class Claim(Base):
+class Claim(RuntimeBase):
     """최종 청구 생성 데이터"""
     __tablename__ = "claims"
 
@@ -242,7 +314,7 @@ class Claim(Base):
     total_amount = Column(Integer)
     status = Column(String, default="READY") 
 
-class ExtractedData(Base):
+class ExtractedData(RuntimeBase):
     """OCR 추출 데이터 임시 버퍼"""
     __tablename__ = "extracted_data"
 
@@ -251,33 +323,5 @@ class ExtractedData(Base):
     raw_key = Column(String)
     raw_value = Column(String)
     confidence = Column(Float)
+    is_confirmed = Column(Integer, default=0)
 
-class AuditLog(Base):
-    __tablename__ = 'audit_logs'
-    
-    log_id = Column(Integer, primary_key=True, autoincrement=True)
-    op_id = Column(Integer, ForeignKey('operators.op_id')) # 누가(Operator ID)
-    action = Column(String(100))                          # 무엇을(작업명)
-    target_id = Column(Integer, nullable=True)            # 누구에게(환자 ID)
-    reason = Column(String(500))                          # 왜/상세내용
-    access_time = Column(DateTime, default=datetime.now)
-
-class SecuritySetting(Base):
-    __tablename__ = 'security_settings'
-    
-    id = Column(Integer, primary_key=True)
-    op_id = Column(Integer, ForeignKey('operators.op_id'), unique=True, nullable=False) # 운영자와 연결
-    password_hash = Column(String(255), nullable=False)
-    password_set_at = Column(DateTime, default=datetime.now)
-    # 관계 설정
-    operator = relationship("Operator", back_populates="security")
-
-class SystemLog(Base):
-    """프로그램 내부 오류 및 실행 상태 로깅용 테이블"""
-    __tablename__ = 'system_logs'
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    level = Column(String(20))     # INFO, ERROR, WARNING
-    step_name = Column(String(100)) # 어느 단계에서 발생했는지
-    message = Column(Text)         # 에러 메시지 내용
-    created_at = Column(DateTime, default=datetime.now)

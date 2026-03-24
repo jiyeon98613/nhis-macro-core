@@ -3,7 +3,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from datetime import datetime
 
-Base = declarative_base()
+OnboardingBase = declarative_base()  # 기준 정보용
+RuntimeBase = declarative_base()     # 실행 정보용
 
 class DBManager:
     def __init__(self):
@@ -16,24 +17,23 @@ class DBManager:
     def initialize(self, onboarding_path: str, runtime_path: str, echo: bool = False):
         """외부에서 주입받은 두 개의 경로로 각각의 DB를 초기화합니다."""
         
-        # 1. Onboarding DB 초기화
-        onboarding_url = f"sqlite:///{onboarding_path}"
+        # 1. Onboarding DB
         self.onboarding_engine = create_engine(
-            onboarding_url, echo=echo, connect_args={"check_same_thread": False}
+            f"sqlite:///{onboarding_path}", echo=echo,
+            connect_args={"check_same_thread": False}
         )
-        self.OnboardingSession = sessionmaker(autocommit=False, autoflush=False, bind=self.onboarding_engine)
+        self.OnboardingSession = sessionmaker(bind=self.onboarding_engine)
 
-        # 2. Runtime DB 초기화
-        runtime_url = f"sqlite:///{runtime_path}"
+        # 2. Runtime DB
         self.runtime_engine = create_engine(
-            runtime_url, echo=echo, connect_args={"check_same_thread": False}
+            f"sqlite:///{runtime_path}", echo=echo,
+            connect_args={"check_same_thread": False}
         )
-        self.RuntimeSession = sessionmaker(autocommit=False, autoflush=False, bind=self.runtime_engine)
+        self.RuntimeSession = sessionmaker(bind=self.runtime_engine)
 
-        # 3. 테이블 생성 (만약 파일은 있는데 테이블이 없다면 생성)
-        # Base.metadata에 등록된 모든 테이블을 각 엔진에 맞게 생성합니다.
-        Base.metadata.create_all(self.onboarding_engine)
-        Base.metadata.create_all(self.runtime_engine)
+        # 3. 각 Base가 자기 테이블만 생성
+        OnboardingBase.metadata.create_all(self.onboarding_engine)  # hospitals, doctors, operators만
+        RuntimeBase.metadata.create_all(self.runtime_engine)        # patients, prescriptions만
 
     def get_onboarding_session(self):
         if not self.OnboardingSession:
@@ -47,8 +47,8 @@ class DBManager:
 
     def log_event(self, op_id: int, action: str, target_id: int = None, reason: str = ""):
         """별도의 세션을 열어 즉시 로그를 남기고 닫습니다."""
-    from core.models import AuditLog
-    from datetime import datetime
+        from core.models import AuditLog
+        from datetime import datetime
 
         session = self.get_onboarding_session()
         try:
