@@ -5,7 +5,7 @@ from core.security import verify_password
 from datetime import datetime
 
 class AuthManager:
-    _current_user = None
+    __current_user = None
 
     @classmethod
     def login(cls):
@@ -28,7 +28,7 @@ class AuthManager:
             # 2. 비밀번호 검증
             sec = session.query(SecuritySetting).filter_by(op_id=op.op_id).first()
             if sec and verify_password(password, sec.password_hash):
-                cls._current_user = {
+                cls.__current_user = {
                     "op_id": op.op_id,
                     "name": op.name,
                     "role": op.role
@@ -46,4 +46,12 @@ class AuthManager:
 
     @classmethod
     def get_current_user(cls):
-        return cls._current_user
+        """읽기 전용 복사본 반환 — 원본 딕셔너리 수정 불가"""
+        if cls.__current_user is None:
+            return None
+        return dict(cls.__current_user)  # ② 복사본 반환
+    
+    @classmethod
+    def logout(cls):
+        """로그아웃은 명시적 메서드로만 가능"""
+        cls.__current_user = None
