@@ -16,7 +16,7 @@ from typing import Optional
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
-from datetime import datetime
+
 
 OnboardingBase = declarative_base()  # 기준 정보용
 RuntimeBase = declarative_base()     # 실행 정보용
