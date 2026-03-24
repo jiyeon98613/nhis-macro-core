@@ -1,11 +1,18 @@
 # core/workflow/base_step.py
+"""
+core/workflow/base_step.py — 워크플로우 스텝 추상 클래스
+========================================================
+모든 Step(AuthStep, FileScanStep 등)의 부모 클래스.
+run()을 반드시 구현해야 하며, log()와 handle_failure()를 공통 제공.
+"""
 
 from abc import ABC, abstractmethod
+from core.logger import get_step_logger
 
 class BaseStep(ABC):
 
-    def __init__(self):
-        self._log_buffer = []  # 로그 임시 저장소
+    def __init__(self) -> str:
+        self.logger = get_step_logger(self.name)
 
     @property
     def name(self):
@@ -14,50 +21,20 @@ class BaseStep(ABC):
 
     @abstractmethod
     def run(self, context: dict) -> None:
-        """모든 스텝이 공통으로 구현해야 하는 실행 로직"""
         pass
 
-    def log(self, message: str, level: str = "INFO"):
-        """콘솔 출력 + 버퍼에 적재 (DB는 아직 안 건드림)"""
-        print(f"🔹 [{self.name}] {message}")
-        self._log_buffer.append({
-            "level": level,
-            "step_name": self.name,
-            "message": message
-        })
+    def log(self, message: str, level: str = "INFO") -> None:
+        """기존 self.log() 호출과 호환 유지"""
+        log_method = getattr(self.logger, level.lower(), self.logger.info)
+        log_method(message)
+    
+    # flush_logs() 삭제 — 핸들러가 알아서 처리함
 
-    def flush_logs(self):
-        """버퍼에 쌓인 로그를 한 번의 세션으로 DB에 일괄 저장"""
-        if not self._log_buffer:
-            return
-            
-        from core.db_manager import db
-        from core.models import SystemLog
-        
-        session = db.get_runtime_session()
-        try:
-            for entry in self._log_buffer:
-                session.add(SystemLog(
-                    level=entry["level"],
-                    step_name=entry["step_name"],
-                    message=entry["message"]
-                ))
-            session.commit()
-        except Exception as e:
-            session.rollback()
-            print(f"⚠️ 시스템 로그 저장 실패: {e}")
-        finally:
-            session.close()
-            self._log_buffer.clear()  # 저장 후 비우기
-
-    def handle_failure(self, error):
-        """에러도 버퍼에 남긴 뒤 사용자 입력 받음"""
-        self.log(f"오류 발생: {error}", level="ERROR")
+    def handle_failure(self, error: Exception) -> str:
+        self.logger.error(f"오류 발생: {error}", exc_info=True)  # ← 스택트레이스 자동 기록
         print(f"\n❌ [{self.name}] 실행 중 오류가 발생했습니다.")
         print(f"📝 상세 에러: {error}")
-        
         while True:
             choice = input("👉 작업 선택 (r: 재시도, s: 건너뛰기, q: 전체 종료): ").lower().strip()
-            if choice in ['r', 's', 'q']:
+            if choice in ('r', 's', 'q'):
                 return choice
-            print("❗ 잘못된 입력입니다. r, s, q 중 하나를 입력하세요.")
