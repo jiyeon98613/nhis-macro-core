@@ -1,8 +1,16 @@
+"""
+core/models.py — SQLAlchemy ORM 모델 정의
+=============================================
+- OnboardingBase: 병원·의사·운영자 등 기준 정보 (onboarding.db)
+- RuntimeBase: 환자·문서·청구 등 실행 데이터 (runtime.db)
+
+테이블 추가/변경 시 반드시 양쪽 Base 소속을 확인해야함.
+"""
+
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Float, Boolean
 from sqlalchemy.orm import relationship, declarative_base  
 from sqlalchemy.sql import func
 from core.db_manager import OnboardingBase, RuntimeBase 
-from datetime import datetime
 
 # =================================================================
 # 1. Onboarding Data (기준 정보 - onboarding.db)
@@ -82,7 +90,7 @@ class AuditLog(OnboardingBase):
     action = Column(String(100))                          # 무엇을(작업명)
     target_id = Column(Integer, nullable=True)            # 누구에게(환자 ID)
     reason = Column(String(500))                          # 왜/상세내용
-    access_time = Column(DateTime, default=datetime.now)
+    access_time = Column(DateTime, default=datetime.now())
 
 class SecuritySetting(OnboardingBase):
     __tablename__ = 'security_settings'
@@ -90,7 +98,7 @@ class SecuritySetting(OnboardingBase):
     id = Column(Integer, primary_key=True)
     op_id = Column(Integer, ForeignKey('operators.op_id'), unique=True, nullable=False) # 운영자와 연결
     password_hash = Column(String(255), nullable=False)
-    password_set_at = Column(DateTime, default=datetime.now)
+    password_set_at = Column(DateTime, default=datetime.now())
     # 관계 설정
     operator = relationship("Operator", back_populates="security")
 
@@ -102,7 +110,7 @@ class Approval(OnboardingBase):
     scope = Column(String, nullable=False)       # BATCH_SAVE, DELETE_LOG, FINAL_SUBMIT
     target_id = Column(String, nullable=False)    # 승인 대상의 PK
     approved_by = Column(Integer, ForeignKey("operators.op_id"), nullable=False)
-    approved_at = Column(DateTime, default=datetime.now)
+    approved_at = Column(DateTime, default=datetime.now())
     detail = Column(Text)
 
 class DocumentTemplate(OnboardingBase):
@@ -149,7 +157,7 @@ class SystemLog(RuntimeBase):
     level = Column(String(20))     # INFO, ERROR, WARNING
     step_name = Column(String(100)) # 어느 단계에서 발생했는지
     message = Column(Text)         # 에러 메시지 내용
-    created_at = Column(DateTime, default=datetime.now)
+    created_at = Column(DateTime, default=datetime.now())
 
 class Patient(RuntimeBase):
     """환자 기본 인적사항 및 고정 정보"""
@@ -324,4 +332,3 @@ class ExtractedData(RuntimeBase):
     raw_value = Column(String)
     confidence = Column(Float)
     is_confirmed = Column(Integer, default=0)
-
