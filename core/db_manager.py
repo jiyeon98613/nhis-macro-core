@@ -71,25 +71,39 @@ class DBManager:
         op_id: int,
         action: str,
         target_id: Optional[int] = None,
-        reason: str = ""
+        reason: str = "",
+        session: Optional[Session] = None
     ) -> None:
-        """감사 로그를 즉시 기록합니다 (세션 열고 → 커밋 → 닫기)."""
+        """감사 로그를 기록합니다.
+
+        Args:
+            session: 기존 세션을 넘기면 그 세션에 add만 합니다 (커밋은 호출자 책임).
+                     None이면 독립 세션을 열어 즉시 커밋합니다.
+        """
         from core.models import AuditLog
 
-        session = self.get_onboarding_session()
+        audit = AuditLog(
+            op_id=op_id,
+            action=action,
+            target_id=target_id,
+            reason=reason,
+        )
+
+        if session is not None:
+            # 기존 세션에 얹기만 — 커밋은 호출자가 함
+            session.add(audit)
+            return
+
+        # 독립 세션 — 즉시 커밋
+        own_session = self.get_onboarding_session()
         try:
-            session.add(AuditLog(
-                op_id=op_id,
-                action=action,
-                target_id=target_id,
-                reason=reason,
-            ))
-            session.commit()
+            own_session.add(audit)
+            own_session.commit()
         except Exception as e:
-            session.rollback()
+            own_session.rollback()
             print(f"⚠️ 로그 기록 실패: {e}")
         finally:
-            session.close()
+            own_session.close()
 
     @property
     def onboarding_engine(self) -> Optional[Engine]:

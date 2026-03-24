@@ -29,12 +29,11 @@ class DBHandler(logging.Handler):
     """WARNING 이상의 로그를 runtime.db SystemLog 테이블에 버퍼링하여 일괄 저장하는 핸들러"""
     
     def __init__(self, buffer_size: int = 20):
-         """버퍼 크기를 지정하여 핸들러를 초기화합니다.
+        """버퍼 크기를 지정하여 핸들러를 초기화합니다.
 
         Args:
             buffer_size: 이 개수만큼 쌓이면 자동으로 DB에 flush합니다.
         """
-
         super().__init__()
         self._buffer: list[logging.LogRecord] = []
         self._buffer_size = buffer_size
