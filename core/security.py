@@ -77,3 +77,27 @@ def verify_password(password: str, hashed_password: str) -> bool:
         return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
     except Exception:
         return False
+
+
+# --- [4. 비밀번호 복잡도 검증] ---
+def validate_password_strength(
+    password: str,
+    min_length: int = 8,
+    require_alpha: bool = True,
+    require_digit: bool = True,
+) -> tuple[bool, str]:
+    """비밀번호 복잡도 검증: 영문+숫자 조합, 기본 8자 이상
+
+    Returns:
+        (통과여부, 실패사유) — 통과 시 사유는 빈 문자열
+    """
+    if len(password) < min_length:
+        return False, f"비밀번호는 {min_length}자 이상이어야 합니다."
+
+    if require_alpha and not any(c.isalpha() for c in password):
+        return False, "비밀번호에 영문자가 포함되어야 합니다."
+
+    if require_digit and not any(c.isdigit() for c in password):
+        return False, "비밀번호에 숫자가 포함되어야 합니다."
+
+    return True, ""
