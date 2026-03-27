@@ -331,3 +331,17 @@ class ExtractedData(RuntimeBase):
     raw_value = Column(String)
     confidence = Column(Float)
     is_confirmed = Column(Integer, default=0)
+
+
+class WorkflowSession(RuntimeBase):
+    """워크플로우 세션 진행상황 추적"""
+    __tablename__ = "workflow_sessions"
+
+    session_id = Column(Integer, primary_key=True, autoincrement=True)
+    op_id = Column(Integer, nullable=False)
+    started_at = Column(DateTime, server_default=func.now())
+    finished_at = Column(DateTime, nullable=True)
+    status = Column(String(20), default="RUNNING")       # RUNNING / COMPLETED / FAILED
+    current_step = Column(String(100), nullable=True)     # 현재 실행 중인 스텝
+    completed_steps = Column(Text, default="")            # 완료된 스텝 (쉼표 구분)
+    error_message = Column(Text, nullable=True)
