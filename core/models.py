@@ -76,7 +76,8 @@ class Operator(OnboardingBase):
     op_id = Column(Integer, primary_key=True, autoincrement=True)
     hosp_id = Column(Integer, ForeignKey("hospitals.hosp_id"))
     name = Column(String(50), nullable=False)
-    email = Column(String(100), unique=True)
+    phone_num = Column(String(20), unique=True)   # 로그인 ID (전화번호)
+    email = Column(String(100))                    # 선택 입력
     role = Column(String(20)) # ADMIN, STAFF
     is_active = Column(Integer, default=1)
     security = relationship("SecuritySetting", back_populates="operator", uselist=False)
@@ -98,6 +99,7 @@ class SecuritySetting(OnboardingBase):
     op_id = Column(Integer, ForeignKey('operators.op_id'), unique=True, nullable=False) # 운영자와 연결
     password_hash = Column(String(255), nullable=False)
     password_set_at = Column(DateTime, server_default=func.now())
+    password_snooze_until = Column(DateTime, nullable=True)  # "나중에" 선택 시 재안내 날짜
     # 관계 설정
     operator = relationship("Operator", back_populates="security")
 
@@ -163,9 +165,9 @@ class Patient(RuntimeBase):
     __tablename__ = "patients"
 
     pat_id = Column(Integer, primary_key=True, autoincrement=True)
-    pat_name = Column(String, nullable=False)
+    pat_name = Column(String, nullable=False, index=True)
     chart_num = Column(String, unique=True, nullable=False)
-    reg_num_front = Column(String(6))
+    reg_num_front = Column(String(6), index=True)
     reg_num_back = Column(String(7))
     phone_num = Column(String)
     address = Column(String)
@@ -176,8 +178,8 @@ class PatientDocument(RuntimeBase):
     __tablename__ = "patient_documents"
 
     doc_id = Column(Integer, primary_key=True, autoincrement=True)
-    pat_id = Column(Integer, ForeignKey("patients.pat_id"))
-    doc_type = Column(String)      # ps(처방전), sr(보고서), ct(계약서), tx(세금), rc(영수증), rt(반납)
+    pat_id = Column(Integer, ForeignKey("patients.pat_id"), index=True)
+    doc_type = Column(String, index=True)  # ps(처방전), sr(보고서), ct(계약서), tx(세금), rc(영수증), rt(반납)
     directory = Column(String)     # 파일 저장 폴더 경로
     generated_filename = Column(String, unique=True)
     issue_date = Column(String)    # 파일명 추출 날짜(YYYYMMDD)
@@ -326,7 +328,7 @@ class ExtractedData(RuntimeBase):
     __tablename__ = "extracted_data"
 
     data_id = Column(Integer, primary_key=True, autoincrement=True)
-    doc_id = Column(Integer, ForeignKey("patient_documents.doc_id"))
+    doc_id = Column(Integer, ForeignKey("patient_documents.doc_id"), index=True)
     raw_key = Column(String)
     raw_value = Column(String)
     confidence = Column(Float)
@@ -338,7 +340,7 @@ class WorkflowSession(RuntimeBase):
     __tablename__ = "workflow_sessions"
 
     session_id = Column(Integer, primary_key=True, autoincrement=True)
-    op_id = Column(Integer, nullable=False)
+    op_id = Column(Integer, nullable=False, index=True)
     started_at = Column(DateTime, server_default=func.now())
     finished_at = Column(DateTime, nullable=True)
     status = Column(String(20), default="RUNNING")       # RUNNING / COMPLETED / FAILED
