@@ -318,10 +318,32 @@ class Claim(RuntimeBase):
 
     claim_id = Column(Integer, primary_key=True, autoincrement=True)
     mu_id = Column(Integer, ForeignKey("monthly_updates.mu_id"))
-    billing_month = Column(String(6), index=True)
-    billing_rate = Column(Integer, default=50) 
-    total_amount = Column(Integer)
-    status = Column(String, default="READY") 
+    pat_id = Column(Integer, ForeignKey("patients.pat_id"), index=True)
+    billing_month = Column(String(6), index=True)  # YYYYMM
+    billing_rate = Column(Integer, default=50)      # 50 or 80
+
+    # 기본 청구액
+    base_total = Column(Integer)          # 공제 전 합계
+    base_insurance = Column(Integer)      # 공제 전 건보
+    base_self_pay = Column(Integer)       # 공제 전 본인부담
+
+    # 마스크비 (신규 등록월만)
+    mask_insurance = Column(Integer, default=0)   # 76,000
+    mask_self_pay = Column(Integer, default=0)    # 19,000
+
+    # 해외출국 공제
+    travel_deduct_days = Column(Integer, default=0)
+    travel_deduct_amount = Column(Integer, default=0)
+
+    # 반납월 공제 → 본인부담금 전환
+    return_deduct_to_self = Column(Integer, default=0)
+
+    # 최종 금액
+    total_amount = Column(Integer)        # 최종 합계
+    final_insurance = Column(Integer)     # 최종 건보
+    final_self_pay = Column(Integer)      # 최종 본인부담
+
+    status = Column(String, default="READY")
 
 class ExtractedData(RuntimeBase):
     """OCR 추출 데이터 임시 버퍼"""
