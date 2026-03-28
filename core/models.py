@@ -171,6 +171,8 @@ class Patient(RuntimeBase):
     reg_num_back = Column(String(7))
     phone_num = Column(String)
     address = Column(String)
+    uses_biz_num = Column(Boolean, default=False)  # 사업자번호 청구 여부 (세계/현영 첨부 필수)
+    biz_num = Column(String, nullable=True)         # 사업자등록번호 (uses_biz_num=True일 때)
     created_at = Column(DateTime, server_default=func.now())
 
 class PatientDocument(RuntimeBase):
