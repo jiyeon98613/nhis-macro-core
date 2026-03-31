@@ -21,7 +21,7 @@ from core.db_manager import OnboardingBase, RuntimeBase
 
 
 class BusinessCertificate(OnboardingBase):
-    """사업자등록증 정보 — Vendor, Patient, Hospital 공용"""
+    """사업자등록증 정보 — Vendor/기관용 (환자용은 PatientBC)"""
     __tablename__ = "business_certificates"
 
     bc_id = Column(Integer, primary_key=True, autoincrement=True)
@@ -36,29 +36,15 @@ class BusinessCertificate(OnboardingBase):
     created_at = Column(DateTime, server_default=func.now())
 
 
-class Hospital(OnboardingBase):
-    """요양기관(병원) 마스터 정보"""
-    __tablename__ = "hospitals"
+class FrequentHospital(OnboardingBase):
+    """자주 사용하는 요양기관 즐겨찾기 — 처방전 입력 자동완성용"""
+    __tablename__ = "frequent_hospitals"
 
-    hosp_id = Column(Integer, primary_key=True, autoincrement=True)
+    fh_id = Column(Integer, primary_key=True, autoincrement=True)
     hosp_code = Column(String, unique=True, nullable=False)   # 요양기관번호
     hosp_name = Column(String, nullable=False)
-    device_hwid = Column(String, nullable=True)               # 승인된 PC 식별값
     bc_id = Column(Integer, ForeignKey("business_certificates.bc_id"), nullable=True)
     reg_doc_path = Column(String, nullable=True)              # 요양기관 등록 서류 경로
-    created_at = Column(DateTime, server_default=func.now())
-
-
-class Doctor(OnboardingBase):
-    """처방의 마스터 정보"""
-    __tablename__ = "doctors"
-
-    doc_id = Column(Integer, primary_key=True, autoincrement=True)
-    hosp_id = Column(Integer, ForeignKey("hospitals.hosp_id"))
-    doc_name = Column(String, nullable=False)
-    license_num = Column(String, unique=True, nullable=False)  # 의사면허번호
-    license_doc_path = Column(String, nullable=True)           # 의사면허증 파일 경로
-    is_active = Column(Integer, default=1)
     created_at = Column(DateTime, server_default=func.now())
 
 
@@ -83,6 +69,7 @@ class Vendor(OnboardingBase):
     vendor_name = Column(String, nullable=False)                # 상호 (조회 편의용)
     biz_num = Column(String, unique=True)                       # 사업자번호 (매칭 편의용)
     bc_id = Column(Integer, ForeignKey("business_certificates.bc_id"), nullable=True)
+    device_hwid = Column(String, nullable=True)                 # 승인된 PC 식별값 (기기 인증용)
     manager_name = Column(String)                               # 담당자 성함
     contact = Column(String)                                    # 연락처
     is_hospital_internal = Column(Boolean, default=False)       # 병원 자체 관리 여부
@@ -107,7 +94,7 @@ class Operator(OnboardingBase):
     __tablename__ = "operators"
 
     op_id = Column(Integer, primary_key=True, autoincrement=True)
-    hosp_id = Column(Integer, ForeignKey("hospitals.hosp_id"))
+    hosp_code = Column(String, nullable=True)                # 소속 요양기관코드 (cross-DB: frequent_hospitals)
     name = Column(String(50), nullable=False)
     phone_num = Column(String(20), unique=True)    # 로그인 ID (전화번호)
     email = Column(String(100))                    # 선택 입력
@@ -155,7 +142,7 @@ class DocumentTemplate(OnboardingBase):
     __tablename__ = "document_templates"
 
     temp_id = Column(Integer, primary_key=True, autoincrement=True)
-    hosp_id = Column(Integer, ForeignKey("hospitals.hosp_id"), nullable=False)
+    hosp_code = Column(String, nullable=True)                  # 요양기관코드 (cross-DB: frequent_hospitals)
     temp_name = Column(String, nullable=False)          # 예: 'ResMed_S10_Report'
     doc_type = Column(String, nullable=False)            # ps, sr, ct, tx, rc, rt
     vendor_name = Column(String)                         # 제조사 (ResMed, Philips 등)
@@ -208,13 +195,28 @@ class Patient(RuntimeBase):
     reg_num_back = Column(String(7))
     phone_num = Column(String)
     address = Column(String)
-    uses_biz_num = Column(Boolean, default=False)       # 사업자번호 청구 여부
-    biz_num = Column(String, nullable=True)              # 매칭 편의용 (BusinessCertificate와 동기화)
-    biz_cert_id = Column(Integer, nullable=True)         # → business_certificates.bc_id (cross-DB, FK 없음)
+    birth_date = Column(Date, nullable=True)               # 생년월일
+    uses_biz_num = Column(Boolean, default=False)          # 사업자번호 청구 여부
+    biz_num = Column(String, nullable=True)                # 매칭 편의용 (PatientBC와 동기화)
+    pbc_id = Column(Integer, ForeignKey("patient_business_certificates.pbc_id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
 
-# PatientBizInfo 삭제됨 → BusinessCertificate(onboarding)로 통합
+class PatientBC(RuntimeBase):
+    """환자 사업자등록 관련 데이터 — 사업자번호로 청구하는 환자 전용"""
+    __tablename__ = "patient_business_certificates"
+
+    pbc_id = Column(Integer, primary_key=True, autoincrement=True)
+    pat_id = Column(Integer, ForeignKey("patients.pat_id"), nullable=False, index=True)
+    biz_num = Column(String, unique=True, nullable=False)   # 사업자등록번호
+    company_name = Column(String)       # 상호
+    rep_name = Column(String)           # 대표자 성명
+    address = Column(String)            # 사업장 주소
+    biz_type = Column(String)           # 업태
+    biz_item = Column(String)           # 종목
+    email = Column(String)
+    doc_path = Column(String, nullable=True)   # 사업자등록증 이미지/PDF 경로
+    created_at = Column(DateTime, server_default=func.now())
 
 
 class DocumentInfo(RuntimeBase):
@@ -387,7 +389,9 @@ class MonthlyUpdate(RuntimeBase):
 
 
 class Claim(RuntimeBase):
-    """최종 청구 생성 데이터 — 분할 시 환자 1인당 최대 3건/월"""
+    """최종 청구 생성 데이터 — 분할 시 환자 1인당 최대 3건/월
+    병원/의사 정보는 ps_id → prescriptions 테이블에서 직접 조회.
+    """
     __tablename__ = "claims"
     __table_args__ = (
         Index("ix_claims_target_month", "target_month"),
@@ -396,6 +400,7 @@ class Claim(RuntimeBase):
     claim_id = Column(Integer, primary_key=True, autoincrement=True)
     mu_id = Column(Integer, ForeignKey("monthly_updates.mu_id"))
     pat_id = Column(Integer, ForeignKey("patients.pat_id"), index=True)
+    ps_id = Column(Integer, ForeignKey("prescriptions.ps_id"), nullable=True)
     target_month = Column(String(7), nullable=False)   # "2026-03"
 
     # 청구 기간 (분할 시 부분 기간)
@@ -432,6 +437,8 @@ class Claim(RuntimeBase):
 
     status = Column(String, default="READY")
     created_at = Column(DateTime, server_default=func.now())
+
+    prescription = relationship("Prescription", foreign_keys=[ps_id], lazy="joined")
 
 
 class PatientAlert(RuntimeBase):
@@ -480,3 +487,4 @@ class WorkflowSession(RuntimeBase):
 
 # ── 하위 호환 alias ──
 PatientDocument = DocumentInfo   # 기존 코드에서 import PatientDocument 계속 사용 가능
+Hospital = FrequentHospital      # 기존 코드에서 import Hospital 계속 사용 가능

@@ -1,90 +1,132 @@
--- [1] hospitals (요양기관 정보)
-CREATE TABLE IF NOT EXISTS hospitals (
-    hosp_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    hosp_code TEXT UNIQUE NOT NULL,    -- 요양기관번호 8자리
-    hosp_name TEXT NOT NULL,
-    device_hwid TEXT,                  -- 승인된 기기 식별값
+-- ============================================================
+-- Onboarding DB (admin_master / onboarding.db)
+-- ============================================================
+
+-- [1] business_certificates (사업자등록증 — Vendor/기관용)
+CREATE TABLE IF NOT EXISTS business_certificates (
+    bc_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    biz_num TEXT UNIQUE NOT NULL,
+    company_name TEXT,
+    rep_name TEXT,
+    address TEXT,
+    biz_type TEXT,
+    biz_item TEXT,
+    email TEXT,
+    doc_path TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- [2] doctors (의사 면허 정보)
-CREATE TABLE IF NOT EXISTS doctors (
-    doc_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    hosp_id INTEGER,
-    hosp_code TEXT NOT NULL,           -- 빠른 조회를 위한 역정규화
-    doc_name TEXT NOT NULL,
-    license_num TEXT UNIQUE NOT NULL,
-    is_active INTEGER DEFAULT 1,       -- 의사 활성 상태 (1: 활성, 0: 퇴사 등)
+-- [2] frequent_hospitals (자주 사용하는 요양기관 — 자동완성용)
+CREATE TABLE IF NOT EXISTS frequent_hospitals (
+    fh_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hosp_code TEXT UNIQUE NOT NULL,
+    hosp_name TEXT NOT NULL,
+    bc_id INTEGER,
+    reg_doc_path TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (hosp_id) REFERENCES hospitals(hosp_id)
+    FOREIGN KEY (bc_id) REFERENCES business_certificates(bc_id)
 );
 
--- [3] operators (청구 담당자/관리자)
+-- [3] manufacturers (양압기 제조/수입사)
+CREATE TABLE IF NOT EXISTS manufacturers (
+    man_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    man_name TEXT UNIQUE NOT NULL,
+    country TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- [4] vendors (양압기 렌탈 업체 — PC 인증 대상)
+CREATE TABLE IF NOT EXISTS vendors (
+    vendor_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vendor_name TEXT NOT NULL,
+    biz_num TEXT UNIQUE,
+    bc_id INTEGER,
+    device_hwid TEXT,
+    manager_name TEXT,
+    contact TEXT,
+    is_hospital_internal INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (bc_id) REFERENCES business_certificates(bc_id)
+);
+
+-- [5] devices (양압기 기기)
+CREATE TABLE IF NOT EXISTS devices (
+    dev_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    man_id INTEGER,
+    vendor_id INTEGER,
+    serial_num TEXT UNIQUE NOT NULL,
+    device_type TEXT,
+    model_name TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (man_id) REFERENCES manufacturers(man_id),
+    FOREIGN KEY (vendor_id) REFERENCES vendors(vendor_id)
+);
+
+-- [6] operators (시스템 운영자)
 CREATE TABLE IF NOT EXISTS operators (
     op_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    hosp_id INTEGER,                   -- 병원 소속 정보 추가
+    hosp_code TEXT,
     name TEXT NOT NULL,
-    email TEXT UNIQUE,
-    role TEXT,                         -- ADMIN, MANAGER, STAFF
-    is_active INTEGER DEFAULT 1,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (hosp_id) REFERENCES hospitals(hosp_id)
+    phone_num TEXT UNIQUE,
+    email TEXT,
+    role TEXT,
+    is_active INTEGER DEFAULT 1
 );
 
--- [4] security_settings (시스템 보안)
+-- [7] security_settings
 CREATE TABLE IF NOT EXISTS security_settings (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
+    id INTEGER PRIMARY KEY,
+    op_id INTEGER UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     password_set_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    last_login_at DATETIME
+    password_snooze_until DATETIME,
+    FOREIGN KEY (op_id) REFERENCES operators(op_id)
 );
 
--- [5] document_templates (문서 양식 정의 - 6종 대응)
-CREATE TABLE IF NOT EXISTS document_templates (
-    temp_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    hosp_id INTEGER NOT NULL,
-    temp_name TEXT NOT NULL,           -- 예: 'ResMed_S10_Report'
-    doc_type TEXT NOT NULL,            -- ps, rp, ct, tx, cs, rt (6종 식별자)
-    vendor_name TEXT,                  -- 제조사 (ResMed, Philips 등)
-    identifier_keyword TEXT,           -- 양식 식별용 고유 키워드
-    confidence_policy TEXT NOT NULL,   -- MANUAL_REQUIRED / AUTO_WITH_REVIEW
-    approved INTEGER NOT NULL DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (hosp_id) REFERENCES hospitals(hosp_id)
+-- [8] audit_logs
+CREATE TABLE IF NOT EXISTS audit_logs (
+    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    op_id INTEGER,
+    action TEXT,
+    target_id INTEGER,
+    reason TEXT,
+    access_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (op_id) REFERENCES operators(op_id)
 );
 
--- [6] document_fields (추출 데이터 필드 정의)
-CREATE TABLE IF NOT EXISTS document_fields (
-    field_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    temp_id INTEGER NOT NULL,
-    field_name TEXT NOT NULL,          -- start_date, reg_num 등
-    field_type TEXT NOT NULL,          -- DATE, TEXT, NUMBER
-    extract_method TEXT NOT NULL,      -- OCR, REGEX, KEYWORD
-    extract_rule TEXT,                 -- 정규표현식 패턴 등
-    is_required INTEGER DEFAULT 1,     -- 필수 필드 여부
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (temp_id) REFERENCES document_templates(temp_id)
-);
-
--- [7] approvals (관리자 승인 기록 - 법적 책임 소재)
+-- [9] approvals
 CREATE TABLE IF NOT EXISTS approvals (
     approval_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    scope TEXT NOT NULL,               -- BATCH_SAVE, DELETE_LOG, FINAL_SUBMIT
-    target_id TEXT NOT NULL,           -- 승인 대상의 PK (예: claim_id)
+    scope TEXT NOT NULL,
+    target_id TEXT NOT NULL,
     approved_by INTEGER NOT NULL,
     approved_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    detail TEXT,                       -- 상세 사유 또는 로그
+    detail TEXT,
     FOREIGN KEY (approved_by) REFERENCES operators(op_id)
 );
 
--- [8] audit_logs (감사 로그 - 영구 보관용)
-CREATE TABLE IF NOT EXISTS audit_logs (
-    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-    operator_id INTEGER NOT NULL,
-    action TEXT NOT NULL,              -- LOGIN, DATA_MODIFIED, FILE_EXPORT
-    target TEXT NOT NULL,              -- 대상 테이블 또는 파일명
-    target_id TEXT,
-    detail TEXT,
-    FOREIGN KEY (operator_id) REFERENCES operators(op_id)
+-- [10] document_templates
+CREATE TABLE IF NOT EXISTS document_templates (
+    temp_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hosp_code TEXT,
+    temp_name TEXT NOT NULL,
+    doc_type TEXT NOT NULL,
+    vendor_name TEXT,
+    identifier_keyword TEXT,
+    confidence_policy TEXT NOT NULL,
+    approved INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- [11] document_fields
+CREATE TABLE IF NOT EXISTS document_fields (
+    field_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    temp_id INTEGER NOT NULL,
+    field_name TEXT NOT NULL,
+    field_type TEXT NOT NULL,
+    extract_method TEXT NOT NULL,
+    extract_rule TEXT,
+    is_required INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (temp_id) REFERENCES document_templates(temp_id)
 );
