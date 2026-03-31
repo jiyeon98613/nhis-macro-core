@@ -356,13 +356,13 @@ class MonthlyUpdate(RuntimeBase):
     """환자별 월간 변동 및 문서 연결 마스터"""
     __tablename__ = "monthly_updates"
     __table_args__ = (
-        UniqueConstraint("pat_id", "target_month", name="uq_mu_pat_month"),
-        Index("ix_mu_target_month", "target_month"),
+        UniqueConstraint("pat_id", "billing_month", name="uq_mu_pat_month"),
+        Index("ix_mu_billing_month", "billing_month"),
     )
 
     mu_id = Column(Integer, primary_key=True, autoincrement=True)
     pat_id = Column(Integer, ForeignKey("patients.pat_id"), index=True)
-    target_month = Column(String(7), nullable=False)   # "2026-03"
+    billing_month = Column(String(7), nullable=False)   # "2026-03"
 
     comp_status = Column(String, default="PASS")          # STARTED / IN_PROGRESS / PASS
     register_status = Column(String, default="ACTIVE")    # ACTIVE / TERMINATED
@@ -394,14 +394,14 @@ class Claim(RuntimeBase):
     """
     __tablename__ = "claims"
     __table_args__ = (
-        Index("ix_claims_target_month", "target_month"),
+        Index("ix_claims_billing_month", "billing_month"),
     )
 
     claim_id = Column(Integer, primary_key=True, autoincrement=True)
     mu_id = Column(Integer, ForeignKey("monthly_updates.mu_id"))
     pat_id = Column(Integer, ForeignKey("patients.pat_id"), index=True)
     ps_id = Column(Integer, ForeignKey("prescriptions.ps_id"), nullable=True)
-    target_month = Column(String(7), nullable=False)   # "2026-03"
+    billing_month = Column(String(7), nullable=False)   # "2026-03"
 
     # 청구 기간 (분할 시 부분 기간)
     period_start = Column(Date, nullable=True)
@@ -445,13 +445,13 @@ class PatientAlert(RuntimeBase):
     """환자관리사항 — 자동감지(처방전만료·순응90일·여행 등) + 수동등록"""
     __tablename__ = "patient_alerts"
     __table_args__ = (
-        Index("ix_alert_target_month", "target_month"),
+        Index("ix_alert_billing_month", "billing_month"),
     )
 
     alert_id = Column(Integer, primary_key=True, autoincrement=True)
     pat_id = Column(Integer, ForeignKey("patients.pat_id"), index=True)
     alert_type = Column(String)           # RX_EXPIRY / COMP_90D / TRAVEL / MASK_REPLACE / …
-    target_month = Column(String(7))      # "2026-03" (대시보드에 표시할 월)
+    billing_month = Column(String(7))      # "2026-03" (대시보드에 표시할 월)
     description = Column(String)
     due_date = Column(Date, nullable=True)
     is_resolved = Column(Boolean, default=False)
