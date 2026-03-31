@@ -20,7 +20,7 @@ PROJECT_ROOT = CORE_ROOT.parent
 sys.path.insert(0, str(CORE_ROOT))
 
 from core.db_manager import DBManager, OnboardingBase, RuntimeBase
-from core.models import Operator, SecuritySetting, Hospital, AuditLog
+from core.models import Operator, SecuritySetting, FrequentHospital, AuditLog
 from core.security import hash_password
 from core.constants import AuditAction, Role
 from core.auth_manager import AuthManager
@@ -51,13 +51,13 @@ def temp_env():
     # 병원 등록
     session = mgr.get_onboarding_session()
     try:
-        hosp = Hospital(hosp_code="TEST_HOSP", hosp_name="테스트병원", device_hwid="HWID")
+        hosp = FrequentHospital(hosp_code="TEST_HOSP", hosp_name="테스트병원", device_hwid="HWID")
         session.add(hosp)
         session.flush()
 
         # 활성 운영자
         op_active = Operator(
-            hosp_id=hosp.hosp_id, name="활성관리자",
+            hosp_code=hosp.hosp_code, name="활성관리자",
             email="active@test.com", role=Role.ADMIN, is_active=1
         )
         session.add(op_active)
@@ -71,7 +71,7 @@ def temp_env():
 
         # 비활성 운영자
         op_inactive = Operator(
-            hosp_id=hosp.hosp_id, name="비활성관리자",
+            hosp_code=hosp.hosp_code, name="비활성관리자",
             email="inactive@test.com", role=Role.ADMIN, is_active=0
         )
         session.add(op_inactive)

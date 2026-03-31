@@ -52,7 +52,7 @@ class TestTableSeparation:
 
     ONBOARDING_TABLES = {
         "business_certificates",
-        "hospitals", "doctors", "manufacturers", "vendors",
+        "frequent_hospitals", "manufacturers", "vendors",
         "devices", "operators", "audit_logs", "security_settings",
         "approvals", "document_templates", "document_fields",
     }
@@ -63,6 +63,7 @@ class TestTableSeparation:
         "return_receipts", "tax_invoices", "receipts",
         "consumables", "travels", "monthly_updates",
         "claims", "patient_alerts", "extracted_data", "workflow_sessions",
+        "patient_business_certificates",
     }
 
     def test_onboarding_db_has_only_onboarding_tables(self, onboarding_session):
@@ -169,19 +170,19 @@ class TestRequiredColumns:
     """nullable=False 컬럼에 None을 넣으면 에러가 나야 함"""
 
     def test_hospital_requires_hosp_code(self, onboarding_session):
-        from core.models import Hospital
+        from core.models import FrequentHospital
         session, _ = onboarding_session
 
-        hosp = Hospital(hosp_name="테스트병원")  # hosp_code 누락
+        hosp = FrequentHospital(hosp_name="테스트병원")  # hosp_code 누락
         session.add(hosp)
         with pytest.raises(Exception):
             session.commit()
 
     def test_hospital_requires_hosp_name(self, onboarding_session):
-        from core.models import Hospital
+        from core.models import FrequentHospital
         session, _ = onboarding_session
 
-        hosp = Hospital(hosp_code="TEST001")  # hosp_name 누락
+        hosp = FrequentHospital(hosp_code="TEST001")  # hosp_name 누락
         session.add(hosp)
         with pytest.raises(Exception):
             session.commit()
