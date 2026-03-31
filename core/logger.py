@@ -18,6 +18,7 @@ Python logging 모듈 기반으로 콘솔·파일·DB에 동시 기록.
     logger = get_step_logger("AuthStep")
     logger.info("인증 시작")
 """
+import atexit
 import logging
 import os
 from datetime import datetime
@@ -117,8 +118,20 @@ def setup_logger(log_dir: str = None) -> logging.Logger:
     db_handler.setLevel(logging.WARNING)
     db_handler.setFormatter(formatter)
     logger.addHandler(db_handler)
-    
+
+    # 프로그램 종료 시 버퍼에 남은 로그 flush
+    atexit.register(_flush_all_handlers, logger)
+
     return logger
+
+
+def _flush_all_handlers(logger: logging.Logger) -> None:
+    """등록된 모든 핸들러를 flush합니다 (atexit용)."""
+    for handler in logger.handlers:
+        try:
+            handler.flush()
+        except Exception:
+            pass
 
 
 def get_step_logger(step_name: str) -> logging.LoggerAdapter:
