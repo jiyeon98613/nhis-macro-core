@@ -52,6 +52,11 @@ class DBManager:
         OnboardingBase.metadata.create_all(self._onboarding_engine)
         RuntimeBase.metadata.create_all(self._runtime_engine)
 
+        # 4. 감사 리스너 자동 등록 (민감 테이블 INSERT/UPDATE/DELETE → AuditLog)
+        #    audit_listener.py 참고. op_id 주입: session._current_op_id = op_id
+        from core.audit_listener import register_audit_listeners
+        register_audit_listeners(self)
+
     def get_onboarding_session(self) -> Session:
         """Onboarding DB 세션을 생성하여 반환합니다. 사용 후 반드시 close() 하세요."""
 
