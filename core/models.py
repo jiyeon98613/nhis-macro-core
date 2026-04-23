@@ -37,14 +37,15 @@ class BusinessCertificate(OnboardingBase):
 
 
 class FrequentHospital(OnboardingBase):
-    """자주 사용하는 요양기관 즐겨찾기 — 처방전 입력 자동완성용"""
+    """자주 사용하는 요양기관 즐겨찾기 — 처방전 입력 자동완성용
+    NOTE: bc_id/reg_doc_path 제거 (2026-04-23). 환자별 병원 연결은
+          인케어랩 1번 ETL 툴에서 Patient.primary_hosp_code 컬럼으로 처리 예정.
+    """
     __tablename__ = "frequent_hospitals"
 
     fh_id = Column(Integer, primary_key=True, autoincrement=True)
     hosp_code = Column(String, unique=True, nullable=False)   # 요양기관번호
     hosp_name = Column(String, nullable=False)
-    bc_id = Column(Integer, ForeignKey("business_certificates.bc_id"), nullable=True)
-    reg_doc_path = Column(String, nullable=True)              # 요양기관 등록 서류 경로
     created_at = Column(DateTime, server_default=func.now())
 
 
@@ -72,7 +73,7 @@ class Vendor(OnboardingBase):
     device_hwid = Column(String, nullable=True)                 # 승인된 PC 식별값 (기기 인증용)
     manager_name = Column(String)                               # 담당자 성함
     contact = Column(String)                                    # 연락처
-    is_hospital_internal = Column(Boolean, default=False)       # 병원 자체 관리 여부
+    # is_hospital_internal 제거 (2026-04-23): dead column, 어디에도 사용 안 됨
     created_at = Column(DateTime, server_default=func.now())
 
 
@@ -94,7 +95,9 @@ class Operator(OnboardingBase):
     __tablename__ = "operators"
 
     op_id = Column(Integer, primary_key=True, autoincrement=True)
-    hosp_code = Column(String, nullable=True)                # 소속 요양기관코드 (cross-DB: frequent_hospitals)
+    # hosp_code → vendor_id로 교체 (2026-04-23): Operator는 렌탈업체 직원. nullable=True는
+    # 현재 단일 벤더(인케어랩) 운영 고려. 멀티벤더 확장 시 NOT NULL로 변경.
+    vendor_id = Column(Integer, ForeignKey("vendors.vendor_id"), nullable=True)
     name = Column(String(50), nullable=False)
     phone_num = Column(String(20), unique=True)    # 로그인 ID (전화번호)
     email = Column(String(100))                    # 선택 입력
@@ -117,7 +120,7 @@ class AuditLog(OnboardingBase):
 class SecuritySetting(OnboardingBase):
     __tablename__ = "security_settings"
 
-    id = Column(Integer, primary_key=True)
+    ss_id = Column(Integer, primary_key=True)   # id → ss_id (2026-04-23, naming convention 통일)
     op_id = Column(Integer, ForeignKey("operators.op_id"), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
     password_set_at = Column(DateTime, server_default=func.now())
@@ -140,6 +143,11 @@ class Approval(OnboardingBase):
 class DocumentTemplate(OnboardingBase):
     """문서 양식 정의 (6종 대응) — OCR 추출의 기준점"""
     __tablename__ = "document_templates"
+    __table_args__ = (
+        # (doc_type, identifier_keyword) 조합은 유일해야 함 — 템플릿 중복 등록 방지
+        # identifier_keyword 값(제조사별 고유 양식 문자열)은 등록 시 지연님이 직접 제공
+        UniqueConstraint("doc_type", "identifier_keyword", name="uq_doctemp_type_keyword"),
+    )
 
     temp_id = Column(Integer, primary_key=True, autoincrement=True)
     hosp_code = Column(String, nullable=True)                  # 요양기관코드 (cross-DB: frequent_hospitals)
@@ -344,12 +352,18 @@ class Consumable(RuntimeBase):
 class Travel(RuntimeBase):
     """해외여행 이력"""
     __tablename__ = "travels"
+    __table_args__ = (
+        # 청구 계산 시 환자별 날짜 범위 조회 최적화 (1000명 배치 대비)
+        Index("ix_travel_pat_dates", "pat_id", "depart_date", "entry_date"),
+    )
 
     t_id = Column(Integer, primary_key=True, autoincrement=True)
     pat_id = Column(Integer, ForeignKey("patients.pat_id"), index=True)
     depart_date = Column(DateTime)         # 출국일
     entry_date = Column(DateTime)          # 입국일
     return_record_path = Column(String)
+    # 해외여행 중 기기 반납 케이스: rt_id IS NOT NULL → 여행+반납 동시 공제 로직 적용
+    rt_id = Column(Integer, ForeignKey("return_receipts.rt_id"), nullable=True)
 
 
 class MonthlyUpdate(RuntimeBase):
@@ -375,7 +389,8 @@ class MonthlyUpdate(RuntimeBase):
     ct_id = Column(Integer, ForeignKey("contracts.ct_id"), nullable=True)
     rt_id = Column(Integer, ForeignKey("return_receipts.rt_id"), nullable=True)
     consumable_id = Column(Integer, ForeignKey("consumables.c_id"), nullable=True)
-    travel_id = Column(Integer, ForeignKey("travels.t_id"), nullable=True)
+    # travel_id 제거 (2026-04-23): 한 달에 여행 복수 가능 → 단일 FK 불충분.
+    # 여행 이력은 Travel.pat_id + 날짜 범위 쿼리로 대체 (billing_calc_step 캐시 참고)
 
     # 청구 분할
     split_claim_count = Column(Integer, default=1)
@@ -438,7 +453,30 @@ class Claim(RuntimeBase):
     status = Column(String, default="READY")
     created_at = Column(DateTime, server_default=func.now())
 
-    prescription = relationship("Prescription", foreign_keys=[ps_id], lazy="joined")
+    # lazy="joined" 제거 (2026-04-23): 1000명 대시보드 로딩 시 불필요한 전체 JOIN 방지.
+    # 처방전이 필요한 곳(billing_calc_step)에서만 options(joinedload(Claim.prescription)) 사용.
+    prescription = relationship("Prescription", foreign_keys=[ps_id])
+
+
+class DeviceAssignment(RuntimeBase):
+    """기기-환자 배정 이력 — 현재 보유자 및 반납 이력 추적
+    현재 보유 환자 조회: WHERE returned_at IS NULL
+    반납 이력 조회:      WHERE returned_at IS NOT NULL
+    Appsmith 기기관리보드의 핵심 테이블.
+    """
+    __tablename__ = "device_assignments"
+    __table_args__ = (
+        Index("ix_da_dev_id", "dev_id"),
+        Index("ix_da_pat_id", "pat_id"),
+    )
+
+    da_id       = Column(Integer, primary_key=True, autoincrement=True)
+    dev_id      = Column(Integer, ForeignKey("devices.dev_id"), nullable=False)
+    pat_id      = Column(Integer, ForeignKey("patients.pat_id"), nullable=False)
+    ct_id       = Column(Integer, ForeignKey("contracts.ct_id"), nullable=True)   # 계약서 연결
+    assigned_at = Column(Date, nullable=False)
+    returned_at = Column(Date, nullable=True)   # null = 현재 보유 중
+    created_at  = Column(DateTime, server_default=func.now())
 
 
 class PatientAlert(RuntimeBase):
@@ -488,3 +526,9 @@ class WorkflowSession(RuntimeBase):
 # ── 하위 호환 alias ──
 PatientDocument = DocumentInfo   # 기존 코드에서 import PatientDocument 계속 사용 가능
 Hospital = FrequentHospital      # 기존 코드에서 import Hospital 계속 사용 가능
+
+# ── 2026-04-23 변경 주의사항 ──
+# SecuritySetting: id → ss_id (PK 컬럼명 변경). 참조 코드 검색:
+#   grep -r "\.id\b" nhis-macro-core/ --include="*.py" | grep -i security
+# Operator: hosp_code → vendor_id (FK 변경). 참조 코드 검색:
+#   grep -r "hosp_code" nhis-macro-engine/ --include="*.py"
