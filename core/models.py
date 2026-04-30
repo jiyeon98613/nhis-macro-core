@@ -207,6 +207,10 @@ class Patient(RuntimeBase):
     uses_biz_num = Column(Boolean, default=False)          # 사업자번호 청구 여부
     biz_num = Column(String, nullable=True)                # 매칭 편의용 (PatientBC와 동기화)
     pbc_id = Column(Integer, ForeignKey("patient_business_certificates.pbc_id"), nullable=True)
+    # ── 2026-04-28 추가 ──
+    is_auto_registered = Column(Boolean, default=False, nullable=False)
+    # True = OCR 승인 시 자동생성된 신환. chart_num = "{pat_id:05d}" (임시).
+    # 환자관리 대시보드에서 실제 차트번호로 교체 후 False로 변경.
     created_at = Column(DateTime, server_default=func.now())
 
 
@@ -261,13 +265,20 @@ class Prescription(RuntimeBase):
 
     is_post_compliance = Column(Boolean)     # 순응 후 처방 여부
     comp_eval_start_date = Column(DateTime)  # 30일 사용 시작일
-    comp_eval_pass_date = Column(DateTime)   # 30일 통과일
+    comp_eval_pass_date = Column(DateTime)   # 30일 통과일 (= comp_eval_end)
     comp_over_4h_days = Column(Integer)      # 4시간 이상 사용일수
 
     doctor_name = Column(String)
     doctor_license = Column(String)
     hosp_name = Column(String)
     hosp_code = Column(String)
+
+    # ── 2026-04-28 추가: OCR 파서 추출 필드 ──
+    disease_code = Column(String, nullable=True)     # 상병코드 (G4730 등)
+    disease_name = Column(String, nullable=True)     # 상병명
+    phone = Column(String, nullable=True)            # 환자 휴대전화
+    serial_num = Column(String, nullable=True)       # 처방전 연번
+    specialist_num = Column(String, nullable=True)   # 전문의 자격번호
 
 
 class SleepReport(RuntimeBase):
@@ -285,6 +296,15 @@ class SleepReport(RuntimeBase):
     pressure_val2 = Column(Float)
     ahi = Column(Float)
 
+    # ── 2026-04-28 추가: OCR 파서 추출 필드 ──
+    manufacturer = Column(String, nullable=True)     # ResMed / Philips / Löwenstein
+    usage_days = Column(Integer, nullable=True)      # 실제 사용일수 (분자)
+    total_days = Column(Integer, nullable=True)      # 전체 기간일수 (분모, 예: 30)
+    over_4h_days = Column(Integer, nullable=True)    # >=4시간 사용일수
+    mode = Column(String, nullable=True)             # AutoSet / CPAP / S / ST 등
+    device_type = Column(String, nullable=True)      # CPAP / APAP / BiPAP
+    birth_date = Column(String, nullable=True)       # YYYYMMDD (수면보고서 기재 생년월일)
+
 
 class Contract(RuntimeBase):
     """양압기 계약서 데이터 (CT)"""
@@ -296,6 +316,14 @@ class Contract(RuntimeBase):
     start_date = Column(DateTime)
     end_date = Column(DateTime)
     device_serial = Column(String)
+
+    # ── 2026-04-28 추가: OCR 파서 추출 필드 ──
+    rental_fee = Column(Integer, nullable=True)      # 대여서비스금액 (원)
+    device_dn = Column(Integer, nullable=True)       # 기기관리번호(DN)
+    model_name = Column(String, nullable=True)       # 모델명 (AIRSENSE 10 AUTO 4G 등)
+    device_type = Column(String, nullable=True)      # CPAP / APAP / BiPAP
+    mask_fee = Column(Integer, nullable=True)        # 소모품마스크금액 (원)
+    contact = Column(String, nullable=True)          # 을(환자) 연락처
 
 
 class ReturnReceipt(RuntimeBase):
@@ -471,7 +499,9 @@ class DeviceAssignment(RuntimeBase):
     )
 
     da_id       = Column(Integer, primary_key=True, autoincrement=True)
-    dev_id      = Column(Integer, ForeignKey("devices.dev_id"), nullable=False)
+    # [cross-DB 논리 참조] Device는 onboarding.db 소속이므로 RuntimeBase에서
+    # SQLAlchemy FK를 물리적으로 만들 수 없음. 코드에서 별도 유효성 검증.
+    dev_id      = Column(Integer, nullable=False)
     pat_id      = Column(Integer, ForeignKey("patients.pat_id"), nullable=False)
     ct_id       = Column(Integer, ForeignKey("contracts.ct_id"), nullable=True)   # 계약서 연결
     assigned_at = Column(Date, nullable=False)
