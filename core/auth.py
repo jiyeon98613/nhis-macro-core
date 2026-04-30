@@ -11,7 +11,7 @@ engine의 AuthStep에서 호출.
 from typing import Optional
 
 from core.db_manager import db
-from core.models import Vendor, Operator, FrequentHospital, BusinessCertificate
+from core.models import Vendor, Operator, FrequentHospital
 from core.security import get_hwid, SecurityManager
 import yaml
 
@@ -37,8 +37,12 @@ def validate_device() -> Optional[Vendor]:
         session.close()
 
 
-def register_vendor(vendor_name: str, biz_num: str = None) -> Vendor:
-    """신규 Vendor 등록 + 현재 PC HWID 바인딩"""
+def register_vendor(vendor_name: str, biz_num: str) -> Vendor:
+    """신규 Vendor 등록 + 현재 PC HWID 바인딩.
+    2026-04-30: biz_num은 NOT NULL (BC 흡수). 호출자가 검증 필수.
+    """
+    if not biz_num:
+        raise ValueError("biz_num은 필수입니다.")
     session = db.get_onboarding_session()
     current_hwid = get_hwid()
     try:
@@ -58,17 +62,14 @@ def register_vendor(vendor_name: str, biz_num: str = None) -> Vendor:
         session.close()
 
 
-def check_vendor_bc(vendor: Vendor) -> Optional[BusinessCertificate]:
-    """Vendor의 사업자등록증 등록 여부 확인"""
-    if not vendor.bc_id:
+def check_vendor_bc(vendor: Vendor) -> Optional[Vendor]:
+    """Vendor의 사업자등록증 등록 여부 확인 (2026-04-30: BC → Vendor 직접 흡수).
+    biz_num + 핵심 필드(rep_name, address)가 채워져 있으면 등록 완료로 본다.
+    반환값: 등록 완료 시 Vendor 자체, 미등록 시 None.
+    """
+    if not vendor.biz_num or not vendor.rep_name or not vendor.address:
         return None
-    session = db.get_onboarding_session()
-    try:
-        return session.query(BusinessCertificate).filter(
-            BusinessCertificate.bc_id == vendor.bc_id
-        ).first()
-    finally:
-        session.close()
+    return vendor
 
 
 def login_operator(phone_num: str, password: str) -> Optional[Operator]:

@@ -51,7 +51,6 @@ class TestTableSeparation:
     RuntimeBase 테이블은 runtime DB에만 생성되어야 함"""
 
     ONBOARDING_TABLES = {
-        "business_certificates",
         "frequent_hospitals", "manufacturers", "vendors",
         "devices", "operators", "audit_logs", "security_settings",
         "approvals", "document_templates", "document_fields",
@@ -62,8 +61,9 @@ class TestTableSeparation:
         "prescriptions", "sleep_reports", "contracts",
         "return_receipts", "tax_invoices", "receipts",
         "consumables", "travels", "monthly_updates",
-        "claims", "patient_alerts", "extracted_data", "workflow_sessions",
-        "patient_business_certificates",
+        "claims", "claim_docs", "patient_alerts", "extracted_data",
+        "workflow_sessions", "workflow_step_logs",
+        "patient_business_certificates", "device_assignments",
     }
 
     def test_onboarding_db_has_only_onboarding_tables(self, onboarding_session):

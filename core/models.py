@@ -20,22 +20,6 @@ from core.db_manager import OnboardingBase, RuntimeBase
 # =================================================================
 
 
-class BusinessCertificate(OnboardingBase):
-    """사업자등록증 정보 — Vendor/기관용 (환자용은 PatientBC)"""
-    __tablename__ = "business_certificates"
-
-    bc_id = Column(Integer, primary_key=True, autoincrement=True)
-    biz_num = Column(String, unique=True, nullable=False)   # 사업자등록번호 ("-" 없이)
-    company_name = Column(String)       # 상호
-    rep_name = Column(String)           # 대표자 성명
-    address = Column(String)            # 사업장 주소
-    biz_type = Column(String)           # 업태
-    biz_item = Column(String)           # 종목
-    email = Column(String)              # 이메일
-    doc_path = Column(String, nullable=True)   # 사업자등록증 이미지/PDF 경로
-    created_at = Column(DateTime, server_default=func.now())
-
-
 class FrequentHospital(OnboardingBase):
     """자주 사용하는 요양기관 즐겨찾기 — 처방전 입력 자동완성용
     NOTE: bc_id/reg_doc_path 제거 (2026-04-23). 환자별 병원 연결은
@@ -61,20 +45,28 @@ class Manufacturer(OnboardingBase):
 
 class Vendor(OnboardingBase):
     """양압기 렌탈 및 유지관리업체 (소매상)
-    사업자 상세정보(대표자·주소·업태·종목·이메일)는
-    BusinessCertificate(bc_id)에서 조회.
+    사업자등록증 정보를 직접 보유 (3NF 수정: BusinessCertificate 1:1 분리 제거).
     """
     __tablename__ = "vendors"
 
-    vendor_id = Column(Integer, primary_key=True, autoincrement=True)
-    vendor_name = Column(String, nullable=False)                # 상호 (조회 편의용)
-    biz_num = Column(String, unique=True)                       # 사업자번호 (매칭 편의용)
-    bc_id = Column(Integer, ForeignKey("business_certificates.bc_id"), nullable=True)
-    device_hwid = Column(String, nullable=True)                 # 승인된 PC 식별값 (기기 인증용)
-    manager_name = Column(String)                               # 담당자 성함
-    contact = Column(String)                                    # 연락처
-    # is_hospital_internal 제거 (2026-04-23): dead column, 어디에도 사용 안 됨
-    created_at = Column(DateTime, server_default=func.now())
+    vendor_id    = Column(Integer, primary_key=True, autoincrement=True)
+    vendor_name  = Column(String, nullable=False)                  # 상호 (조회 편의용)
+    device_hwid  = Column(String, nullable=True)                   # 승인된 PC 식별값 (기기 인증용)
+    manager_name = Column(String)                                  # 담당자 성함
+    contact      = Column(String)                                  # 연락처
+
+    # 사업자등록증 정보 (BusinessCertificate에서 흡수, 2026-04-30)
+    biz_num      = Column(String, unique=True, nullable=False)     # 사업자등록번호 ("-" 없이)
+    company_name = Column(String)       # 상호
+    rep_name     = Column(String)       # 대표자
+    address      = Column(String)       # 사업장 주소
+    biz_type     = Column(String)       # 업태
+    biz_item     = Column(String)       # 종목
+    email        = Column(String)
+    bc_doc_path  = Column(String, nullable=True)   # 사업자등록증 파일 경로 (감사용)
+
+    created_at   = Column(DateTime, server_default=func.now())
+    # bc_id FK 제거 완료 (2026-04-30)
 
 
 class Device(OnboardingBase):
@@ -280,6 +272,13 @@ class Prescription(RuntimeBase):
     serial_num = Column(String, nullable=True)       # 처방전 연번
     specialist_num = Column(String, nullable=True)   # 전문의 자격번호
 
+    # 처방전 교체 추적 (분할 청구 기준일 관리, 2026-04-30 추가)
+    superseded_by_ps_id = Column(Integer,
+                            ForeignKey("prescriptions.ps_id"), nullable=True)
+    # 새 PS 업로드 시 기존 PS의 이 컬럼에 새 ps_id 기록. None = 현재 유효.
+    superseded_date = Column(Date, nullable=True)
+    # 새 PS 업로드일 = 청구 분할 기준일
+
 
 class SleepReport(RuntimeBase):
     """수면보고서 데이터 (SR)"""
@@ -304,6 +303,12 @@ class SleepReport(RuntimeBase):
     mode = Column(String, nullable=True)             # AutoSet / CPAP / S / ST 등
     device_type = Column(String, nullable=True)      # CPAP / APAP / BiPAP
     birth_date = Column(String, nullable=True)       # YYYYMMDD (수면보고서 기재 생년월일)
+
+    # 수면보고서 청구월 명시 (분할 Claim에서 SR 공유 여부 쿼리용, 2026-04-30 추가)
+    report_month      = Column(String(7), nullable=True)
+    # "2026-03" 형식. nullable=True: 기존 레코드 호환
+    compliance_status = Column(String(20), nullable=True)
+    # COMPLIANT / NON_COMPLIANT / IN_PROGRESS
 
 
 class Contract(RuntimeBase):
@@ -334,6 +339,15 @@ class ReturnReceipt(RuntimeBase):
     pat_id = Column(Integer, ForeignKey("patients.pat_id"), index=True)
     doc_id = Column(Integer, ForeignKey("patient_documents.doc_id"))
     return_date = Column(DateTime)
+
+    # 반납확인서 유효기간 및 청구 재시작 추적 (2026-04-30 추가)
+    valid_until          = Column(Date, nullable=True)
+    # None = 관리자 수동 재시작 필요 (indefinite hold)
+    billing_restarted_at = Column(DateTime, nullable=True)
+    restarted_by_op_id   = Column(Integer, nullable=True)
+    # [cross-DB 논리 참조] Operator는 onboarding.db, ReturnReceipt는 runtime.db.
+    # SQLAlchemy ForeignKey는 같은 metadata 내에서만 작동하므로 FK 제약 없이 보관.
+    # 코드에서 별도 유효성 검증.
 
 
 class TaxInvoice(RuntimeBase):
@@ -472,11 +486,7 @@ class Claim(RuntimeBase):
     final_insurance = Column(Integer)
     final_self_pay = Column(Integer)
 
-    # 첨부파일 tracking (쉼표구분 doc_type 목록)
-    required_docs = Column(String, default="")         # "PS,SR" / "SR,TX,RC,CT" 등
-    attached_docs = Column(String, default="")         # 첨부 완료된 doc types
-    sr_count_required = Column(Integer, default=0)     # 필요 수면보고서 수 (순응통과달: 2)
-    sr_count_attached = Column(Integer, default=0)     # 첨부 완료 장수
+    # 첨부파일 tracking은 ClaimDoc 테이블로 정규화 (2026-04-30, 1NF)
 
     status = Column(String, default="READY")
     created_at = Column(DateTime, server_default=func.now())
@@ -484,6 +494,39 @@ class Claim(RuntimeBase):
     # lazy="joined" 제거 (2026-04-23): 1000명 대시보드 로딩 시 불필요한 전체 JOIN 방지.
     # 처방전이 필요한 곳(billing_calc_step)에서만 options(joinedload(Claim.prescription)) 사용.
     prescription = relationship("Prescription", foreign_keys=[ps_id])
+    docs = relationship("ClaimDoc", back_populates="claim", lazy="select")
+
+
+class ClaimDoc(RuntimeBase):
+    """청구별 첨부문서 추적 (1NF 정규화 — Claim.required_docs 쉼표 문자열 대체, 2026-04-30 추가)"""
+    __tablename__ = "claim_docs"
+
+    cd_id        = Column(Integer, primary_key=True, autoincrement=True)
+    claim_id     = Column(Integer, ForeignKey("claims.claim_id"), nullable=False, index=True)
+    doc_type     = Column(String(10), nullable=False)  # PS, SR, CT, RT, RC, TX
+
+    # 실제 문서 레코드 참조 (doc_type에 따라 하나만 채워짐)
+    ps_id        = Column(Integer, ForeignKey("prescriptions.ps_id"), nullable=True)
+    sr_id        = Column(Integer, ForeignKey("sleep_reports.sr_id"), nullable=True)
+    ct_id        = Column(Integer, ForeignKey("contracts.ct_id"), nullable=True)
+    rt_id        = Column(Integer, ForeignKey("return_receipts.rt_id"), nullable=True)
+
+    is_required     = Column(Boolean, default=True)
+    # True  = 이번 달 새로 업로드해야 함
+    # False = 기존 파일 참조만 (유효기간 내 PS, 분할 시 SR 공유 등)
+
+    is_attached     = Column(Boolean, default=False)
+    attached_at     = Column(DateTime, nullable=True)
+    required_reason = Column(String(50), nullable=True)
+    # MONTHLY_SR / ACTIVE_CARRIED / SPLIT_OLD_RX / SPLIT_NEW_RX
+    # COMPLIANCE_OLD_SR / COMPLIANCE_NEW_SR / RETURN / FIRST_CONTRACT
+
+    claim = relationship("Claim", back_populates="docs")
+
+    __table_args__ = (
+        UniqueConstraint("claim_id", "doc_type", "ps_id", "sr_id",
+                         name="uq_claim_doc"),
+    )
 
 
 class DeviceAssignment(RuntimeBase):
@@ -550,7 +593,23 @@ class WorkflowSession(RuntimeBase):
     status = Column(String(20), default="RUNNING")         # RUNNING / COMPLETED / FAILED
     current_step = Column(String(100), nullable=True)
     completed_steps = Column(Text, default="")
+    # completed_steps (Text): 기존 코드 호환 위해 유지. 신규 작성 시 WorkflowStepLog 사용 권장.
     error_message = Column(Text, nullable=True)
+
+
+class WorkflowStepLog(RuntimeBase):
+    """워크플로우 단계별 실행 로그 (WorkflowSession.completed_steps 문자열 분리, 2026-04-30 추가)"""
+    __tablename__ = "workflow_step_logs"
+
+    log_id      = Column(Integer, primary_key=True, autoincrement=True)
+    session_id  = Column(Integer, ForeignKey("workflow_sessions.session_id"),
+                         nullable=False, index=True)
+    step_name   = Column(String(100), nullable=False)
+    status      = Column(String(20), nullable=False)   # COMPLETED / FAILED / SKIPPED
+    started_at  = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    detail      = Column(Text, nullable=True)          # 에러메시지 또는 결과 요약
+    created_at  = Column(DateTime, server_default=func.now())
 
 
 # ── 하위 호환 alias ──
