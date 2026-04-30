@@ -47,18 +47,24 @@ def register_audit_listeners(db_manager) -> None:
         audit_entries = []
 
         def _record(obj, action: str) -> None:
-            table = getattr(obj.__class__, "__tablename__", "")
-            if table not in _SENSITIVE_TABLE_NAMES:
-                return
-            # PK 컬럼 이름 추론 (pat_id, claim_id, ps_id 등)
-            pk_col = next(iter(obj.__mapper__.primary_key), None)
-            target_id = getattr(obj, pk_col.key, None) if pk_col else None
-            audit_entries.append(AuditLog(
-                op_id=op_id,
-                action=f"AUTO_{action}_{table.upper()}",
-                target_id=target_id,
-                reason="auto_audit_listener",
-            ))
+            try:
+                table = getattr(obj.__class__, "__tablename__", "")
+                if table not in _SENSITIVE_TABLE_NAMES:
+                    return
+                # __dict__로 PK 값 직접 추출 (SQLAlchemy 표현식 평가 완전 회피)
+                try:
+                    pk_name = obj.__mapper__.primary_key[0].name
+                    target_id = obj.__dict__.get(pk_name)
+                except Exception:
+                    target_id = None
+                audit_entries.append(AuditLog(
+                    op_id=op_id,
+                    action=f"AUTO_{action}_{table.upper()}",
+                    target_id=target_id,
+                    reason="auto_audit_listener",
+                ))
+            except Exception:
+                pass  # audit 실패는 주 작업을 막지 않음
 
         for obj in session.new:
             _record(obj, "INSERT")
