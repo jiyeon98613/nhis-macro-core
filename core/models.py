@@ -304,11 +304,19 @@ class SleepReport(RuntimeBase):
     device_type = Column(String, nullable=True)      # CPAP / APAP / BiPAP
     birth_date = Column(String, nullable=True)       # YYYYMMDD (수면보고서 기재 생년월일)
 
+    # 처방전 연결 (SR이 속한 PS 기간 추적, 재평가 쿼리 최적화, 2026-05-04 추가)
+    linked_ps_id = Column(Integer, ForeignKey("prescriptions.ps_id"), nullable=True, index=True)
+    # approve 시 날짜 범위 매칭으로 설정. None = 아직 분류 안 됨.
+
     # 수면보고서 청구월 명시 (분할 Claim에서 SR 공유 여부 쿼리용, 2026-04-30 추가)
     report_month      = Column(String(7), nullable=True)
     # "2026-03" 형식. nullable=True: 기존 레코드 호환
     compliance_status = Column(String(20), nullable=True)
-    # COMPLIANT / NON_COMPLIANT / IN_PROGRESS
+    # COMPLIANCE_CANDIDATE : 순응중 PS 기간 내, 순응후 PS 아직 없음 (미결)
+    # COMPLIANCE_PASS      : 순응통과 확정 (이후 순응후 PS 등록으로 확인)
+    # MONTHLY              : 순응후 PS 처방기간 내 일반 월별 SR
+    # INVALID              : 어느 PS 기간에도 속하지 않음 (cascade delete 대상)
+    # CONFLICT             : PS/SR 날짜 충돌, 관리자 결정 필요
 
 
 class Contract(RuntimeBase):
@@ -339,6 +347,7 @@ class ReturnReceipt(RuntimeBase):
     pat_id = Column(Integer, ForeignKey("patients.pat_id"), index=True)
     doc_id = Column(Integer, ForeignKey("patient_documents.doc_id"))
     return_date = Column(DateTime)
+    device_serial = Column(String, nullable=True)        # 반납 기기 일련번호 (OCR 추출)
 
     # 반납확인서 유효기간 및 청구 재시작 추적 (2026-04-30 추가)
     valid_until          = Column(Date, nullable=True)
