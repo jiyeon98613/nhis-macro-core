@@ -11,6 +11,8 @@ onboarding.db와 runtime.db 두 개의 SQLite를 관리.
     session = db.get_onboarding_session()
 """
 
+import os
+import re
 from typing import Optional
 
 from sqlalchemy import create_engine
@@ -20,6 +22,28 @@ from sqlalchemy.orm import sessionmaker, declarative_base, Session
 
 OnboardingBase = declarative_base()  # 기준 정보용
 RuntimeBase = declarative_base()     # 실행 정보용
+
+
+
+def _check_path_compatibility(*paths: str) -> None:
+    """Windows 드라이브 경로(예: H:/foo)를 비-Windows 환경에서 사용하면 에러.
+
+    config.yaml에 H:/nhis-macro-data/... 처럼 Windows 절대 경로가 박혀있는데
+    WSL/git-bash/Linux 컨테이너에서 그대로 실행하면 'H:'가 *리터럴 폴더*로
+    해석되어 cwd 아래에 H:/nhis-macro-data/... 가 잘못 생성됩니다.
+    개발자(또는 자동화 도구)가 같은 사고를 다시 일으키지 않도록 차단.
+    """
+    if os.name == "nt":
+        return
+    DRIVE_RE = re.compile(r"^[A-Za-z]:[/\\]")
+    for path in paths:
+        if path and DRIVE_RE.match(path):
+            raise RuntimeError(
+                f"비-Windows 환경({os.name})에서 Windows 드라이브 경로 감지: {path}\n"
+                f"이대로 진행하면 cwd 아래에 '{path[:2]}' 같은 리터럴 폴더가 생성됩니다.\n"
+                f"해결: (1) Windows 네이티브에서 실행하거나 "
+                f"(2) config의 db.* 경로를 OS-중립(또는 환경변수 기반)으로 수정하세요."
+            )
 
 
 class DBManager:
@@ -33,6 +57,7 @@ class DBManager:
 
     def initialize(self, onboarding_path: str, runtime_path: str, echo: bool = False) -> None:
         """외부에서 주입받은 두 개의 경로로 각각의 DB를 초기화합니다."""
+        _check_path_compatibility(onboarding_path, runtime_path)
 
         # 1. Onboarding DB
         self._onboarding_engine = create_engine(

@@ -621,6 +621,54 @@ class WorkflowStepLog(RuntimeBase):
     created_at  = Column(DateTime, server_default=func.now())
 
 
+class ExcelImportSession(RuntimeBase):
+    """Excel 환자 명단 임포트 세션 (preview <-> confirm 두 단계 사이의 상태 보관, 2026-05-05 추가)
+    - status: 'preview'  = upload 후 헤더 자동감지 / 검증 결과 대기
+              'confirmed' = confirm API 호출 완료, Patient UPSERT 실행됨
+              'cancelled' = 사용자 취소 또는 만료
+    - JSON 필드는 SQLite Text 로 저장. 라우터 레벨에서 dict <-> json.dumps 변환.
+    """
+    __tablename__ = "excel_import_sessions"
+
+    session_id           = Column(Integer, primary_key=True, autoincrement=True)
+    file_path            = Column(String, nullable=False)
+    # 업로드된 원본 파일 절대경로 (storage/uploads/excel/...)
+    original_filename    = Column(String, nullable=True)
+
+    first_data_row       = Column(Integer, nullable=False)
+    # 1-based 행 번호. 관리자가 입력한 첫 환자 데이터 위치.
+
+    sample_patient_json  = Column(Text, nullable=False)
+    # {"name": "...", "rrn": "...", "phone": "...", "chart_num": "..."}
+
+    header_candidates_json = Column(Text, nullable=True)
+    # 자동감지 결과: [{"row_idx": 3, "score": 12, "headers": ["이름","주민번호",...]}]
+
+    column_mapping_json  = Column(Text, nullable=True)
+    # 역추적된 컬럼 매핑: {"name_col": 1, "rrn_col": 2, "rrn_split": false, ...}
+
+    preview_rows_json    = Column(Text, nullable=True)
+    # 미리보기 행: [{"row_idx": N, "name": "...", "rrn": "...", "valid": true, "errors": []}]
+
+    anomalies_json       = Column(Text, nullable=True)
+    # 이상행 별도 보관: [{"row_idx": N, "reason": "이름누락"}, ...]
+
+    status               = Column(String(20), nullable=False, default="preview", index=True)
+    # preview / confirmed / cancelled
+
+    created_by_op_id     = Column(Integer, nullable=True)
+    # NOTE: FK 제거 — operators는 onboarding.db에 있어 cross-db FK 불가 (감사로만 사용)
+    created_at           = Column(DateTime, server_default=func.now())
+    confirmed_at         = Column(DateTime, nullable=True)
+    confirmed_by_op_id   = Column(Integer, nullable=True)
+
+    # 결과 통계 (confirm 후)
+    success_count        = Column(Integer, nullable=True)
+    failed_count         = Column(Integer, nullable=True)
+    failed_detail_json   = Column(Text, nullable=True)
+    # [{"row_idx": N, "reason": "..."}]
+
+
 # ── 하위 호환 alias ──
 PatientDocument = DocumentInfo   # 기존 코드에서 import PatientDocument 계속 사용 가능
 Hospital = FrequentHospital      # 기존 코드에서 import Hospital 계속 사용 가능
