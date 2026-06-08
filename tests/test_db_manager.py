@@ -136,17 +136,31 @@ class TestEngineProperty:
 class TestLogEvent:
     """log_event()가 AuditLog 테이블에 정상 기록되는지 확인"""
 
+    @staticmethod
+    def _seed_operator(manager, phone: str = "01099990001") -> str:
+        from core.models import Operator
+
+        session = manager.get_onboarding_session()
+        try:
+            op = Operator(name="로그테스트", phone_num=phone, role="ADMIN")
+            session.add(op)
+            session.commit()
+            return op.op_id
+        finally:
+            session.close()
+
     def test_log_event_creates_record(self, manager):
         from core.models import AuditLog
 
-        manager.log_event(op_id=1, action="TEST_ACTION", reason="unit test")
+        op_id = self._seed_operator(manager)
+        manager.log_event(op_id=op_id, action="TEST_ACTION", reason="unit test")
 
         session = manager.get_onboarding_session()
         try:
             logs = session.query(AuditLog).all()
             assert len(logs) == 1
             assert logs[0].action == "TEST_ACTION"
-            assert logs[0].op_id == 1
+            assert logs[0].op_id == op_id
             assert logs[0].reason == "unit test"
         finally:
             session.close()
@@ -154,12 +168,14 @@ class TestLogEvent:
     def test_log_event_with_target_id(self, manager):
         from core.models import AuditLog
 
-        manager.log_event(op_id=2, action="PATIENT_CREATE", target_id=99, reason="Excel")
+        op_id = self._seed_operator(manager, phone="01099990002")
+        target = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        manager.log_event(op_id=op_id, action="PATIENT_CREATE", target_id=target, reason="Excel")
 
         session = manager.get_onboarding_session()
         try:
             log = session.query(AuditLog).first()
-            assert log.target_id == 99
+            assert log.target_id == target
         finally:
             session.close()
 
@@ -167,9 +183,10 @@ class TestLogEvent:
         """여러 번 호출해도 각각 독립적으로 기록되어야 함"""
         from core.models import AuditLog
 
-        manager.log_event(op_id=1, action="A1", reason="r1")
-        manager.log_event(op_id=1, action="A2", reason="r2")
-        manager.log_event(op_id=1, action="A3", reason="r3")
+        op_id = self._seed_operator(manager, phone="01099990003")
+        manager.log_event(op_id=op_id, action="A1", reason="r1")
+        manager.log_event(op_id=op_id, action="A2", reason="r2")
+        manager.log_event(op_id=op_id, action="A3", reason="r3")
 
         session = manager.get_onboarding_session()
         try:
@@ -180,7 +197,5 @@ class TestLogEvent:
 
     def test_log_event_does_not_crash_on_error(self, manager, capsys):
         """log_event 내부 에러 시 프로그램이 죽지 않고 경고만 출력"""
-        # op_id에 문자열을 넣으면 FK 타입 불일치이지만,
-        # SQLite는 느슨해서 안 터질 수 있음. 대신 None action 테스트
-        manager.log_event(op_id=1, action=None, reason="test")
-        # 죽지 않으면 성공
+        op_id = self._seed_operator(manager, phone="01099990004")
+        manager.log_event(op_id=op_id, action=None, reason="test")

@@ -98,9 +98,9 @@ class DBManager:
 
     def log_event(
         self,
-        op_id: int,
+        op_id: str,
         action: str,
-        target_id: Optional[int] = None,
+        target_id: Optional[str] = None,
         reason: str = "",
         session: Optional[Session] = None
     ) -> None:

@@ -64,6 +64,7 @@ class TestTableSeparation:
         "claims", "claim_docs", "patient_alerts", "extracted_data",
         "workflow_sessions", "workflow_step_logs",
         "patient_business_certificates", "device_assignments",
+        "excel_import_sessions",
     }
 
     def test_onboarding_db_has_only_onboarding_tables(self, onboarding_session):
@@ -102,13 +103,19 @@ class TestDatetimeDefaults:
         from core.models import AuditLog
         session, _ = onboarding_session
 
-        log1 = AuditLog(op_id=1, action="TEST_1", reason="first")
+        from core.models import Operator
+
+        op = Operator(name="감사테스트", phone_num="01011112222", role="ADMIN")
+        session.add(op)
+        session.flush()
+
+        log1 = AuditLog(op_id=op.op_id, action="TEST_1", reason="first")
         session.add(log1)
         session.commit()
 
         time.sleep(1.1)
 
-        log2 = AuditLog(op_id=1, action="TEST_2", reason="second")
+        log2 = AuditLog(op_id=op.op_id, action="TEST_2", reason="second")
         session.add(log2)
         session.commit()
 
@@ -126,7 +133,13 @@ class TestDatetimeDefaults:
         from core.models import Approval
         session, _ = onboarding_session
 
-        appr = Approval(scope="TEST", target_id="1", approved_by=1)
+        from core.models import Operator
+
+        op = Operator(name="승인테스트", phone_num="01033334444", role="ADMIN")
+        session.add(op)
+        session.flush()
+
+        appr = Approval(scope="TEST", target_id=op.op_id, approved_by=op.op_id)
         session.add(appr)
         session.commit()
         session.refresh(appr)

@@ -51,13 +51,14 @@ def temp_env():
     # 병원 등록
     session = mgr.get_onboarding_session()
     try:
-        hosp = FrequentHospital(hosp_code="TEST_HOSP", hosp_name="테스트병원", device_hwid="HWID")
+        hosp = FrequentHospital(hosp_code="TEST_HOSP", hosp_name="테스트병원")
         session.add(hosp)
         session.flush()
 
         # 활성 운영자
         op_active = Operator(
-            hosp_code=hosp.hosp_code, name="활성관리자",
+            name="활성관리자",
+            phone_num="01011110001",
             email="active@test.com", role=Role.ADMIN, is_active=1
         )
         session.add(op_active)
@@ -71,7 +72,8 @@ def temp_env():
 
         # 비활성 운영자
         op_inactive = Operator(
-            hosp_code=hosp.hosp_code, name="비활성관리자",
+            name="비활성관리자",
+            phone_num="01011110002",
             email="inactive@test.com", role=Role.ADMIN, is_active=0
         )
         session.add(op_inactive)
@@ -236,7 +238,7 @@ class TestReadOnlyCopy:
         user_copy = AuthManager.get_current_user()
         user_copy["name"] = "해커"
         user_copy["role"] = "HACKED"
-        user_copy["op_id"] = 9999
+        user_copy["op_id"] = "99999999-9999-4999-8999-999999999999"
 
         original = AuthManager.get_current_user()
         assert original["name"] == "활성관리자"
