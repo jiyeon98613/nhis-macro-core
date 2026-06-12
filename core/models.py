@@ -203,6 +203,9 @@ class Patient(OrgMixin, AuditMixin, RuntimeBase):
     reg_num_front = Column(String(6), index=True)
     reg_num_back = Column(String(7))
     phone_num = Column(String)
+    # TODO(계획·미적용, 2026-06-11): 다음 recreate 시 CHECK 추가 — 
+    #   phone_num IS NULL OR (phone_num GLOB '01[0-9]*' AND length(phone_num) BETWEEN 10 AND 11 AND phone_num NOT GLOB '*[^0-9]*')
+    #   NOT NULL 아님(OCR 자동등록 보호). 형식 강제는 parser/upsert/validator 계층이 이미 담당.
     address = Column(String)
     birth_date = Column(Date, nullable=True)
     uses_biz_num = Column(Boolean, default=False)
