@@ -208,6 +208,7 @@ class Patient(OrgMixin, AuditMixin, RuntimeBase):
     #   대시보드에서 phone_valid=False(빨강)로 가시화·수동 보정. NOT NULL 아님(빈값 허용).
     #   형식 검증은 표시 계층(patients.list_patients의 phone_valid)만 담당, 저장은 무조건 허용.
     address = Column(String)
+    address_detail = Column(String(200), nullable=True)
     birth_date = Column(Date, nullable=True)
     uses_biz_num = Column(Boolean, default=False)
     biz_num = Column(String, nullable=True)
