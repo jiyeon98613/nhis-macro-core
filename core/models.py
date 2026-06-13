@@ -16,6 +16,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from core.db_manager import OnboardingBase, RuntimeBase
+from core.org_context import get_default_org_id
 
 
 def _uuid_pk() -> Column:
@@ -23,7 +24,8 @@ def _uuid_pk() -> Column:
 
 
 class OrgMixin:
-    org_id = Column(String, default="inkair-lab")
+    # tenant 식별자. 기본값은 core.org_context (앱 시작 시 config 값 주입, 미주입 시 fallback).
+    org_id = Column(String, default=lambda: get_default_org_id())
 
 
 class AuditMixin:
@@ -147,7 +149,7 @@ class DocumentTemplate(OrgMixin, AuditMixin, OnboardingBase):
     """문서 양식 정의 (6종 대응)"""
     __tablename__ = "document_templates"
     __table_args__ = (
-        UniqueConstraint("doc_type", "identifier_keyword", name="uq_doctemp_type_keyword"),
+        UniqueConstraint("org_id", "doc_type", "identifier_keyword", name="uq_doctemp_org_type_keyword"),
     )
 
     temp_id = _uuid_pk()
@@ -196,10 +198,14 @@ class SystemLog(OrgMixin, AuditMixin, RuntimeBase):
 class Patient(OrgMixin, AuditMixin, RuntimeBase):
     """환자 기본 인적사항 및 고정 정보"""
     __tablename__ = "patients"
+    __table_args__ = (
+        # 테넌트-로컬: 차트번호는 병원마다 독립 채번 → org 범위 내 유일
+        UniqueConstraint("org_id", "chart_num", name="uq_patient_org_chart"),
+    )
 
     pat_id = _uuid_pk()
     pat_name = Column(String, nullable=False, index=True)
-    chart_num = Column(String, unique=True, nullable=False)
+    chart_num = Column(String, nullable=False)
     reg_num_front = Column(String(6), index=True)
     reg_num_back = Column(String(7))
     phone_num = Column(String)
@@ -238,12 +244,16 @@ class PatientBC(OrgMixin, AuditMixin, RuntimeBase):
 class DocumentInfo(OrgMixin, AuditMixin, RuntimeBase):
     """문서 파일 메타데이터 및 저장 경로 관리"""
     __tablename__ = "patient_documents"
+    __table_args__ = (
+        # 테넌트-로컬: 생성 파일명은 스토리지가 org별로 분리됨 → org 범위 내 유일
+        UniqueConstraint("org_id", "generated_filename", name="uq_docinfo_org_filename"),
+    )
 
     doc_id = _uuid_pk()
     pat_id = Column(String(36), ForeignKey("patients.pat_id"), nullable=True, index=True)
     doc_type = Column(String, index=True)
     directory = Column(String)
-    generated_filename = Column(String, unique=True)
+    generated_filename = Column(String)
     issue_date = Column(String)
     file_status = Column(String)
     created_at = Column(DateTime, server_default=func.now())
