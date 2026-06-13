@@ -5,3 +5,4 @@ __pycache__/
 # DB나 Key는 애초에 이 폴더에 있으면 안 되지만, 실수 방지용으로 추가
 *.db
 .secret.key
+*.bak
