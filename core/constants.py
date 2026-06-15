@@ -7,21 +7,27 @@ core/constants.py — 프로젝트 전역 상수
 
 사용법:
     from core.constants import DocType, AuditAction
-    doc_type = DocType.PRESCRIPTION_PRE
+    doc_type = DocType.PRESCRIPTION
 """
 
+from enum import Enum
 
 
-# 문서 타입 코드 (6종 + 기타)
-class DocType:
-    PRESCRIPTION_PRE = "ps"           # 순응 전 처방전
-    PRESCRIPTION_POST = "prscrpt_pass"  # 순응 후 처방전
-    SLEEP_REPORT = "sr"               # 수면보고서
-    CONTRACT = "ct"                   # 임대차 계약서
-    TAX_INVOICE = "tx"                # 세금계산서
-    RECEIPT = "rc"                    # 현금영수증
-    RETURN_RECEIPT = "rt"             # 반납확인서
-    ETC = "etc"                       # 기타
+# 문서 타입 코드 (7종 — DocumentInfo.doc_type 전용, PLAN_ASSET_MODEL §8.5)
+class DocType(str, Enum):
+    PRESCRIPTION = "ps"
+    SLEEP_REPORT = "sr"
+    CONTRACT = "ct"
+    TAX_INVOICE = "tx"
+    RECEIPT = "rc"
+    RETURN_RECEIPT = "rt"
+    ETC = "etc"
+
+    # 하위 호환 alias (PRESCRIPTION_POST/prscrpt_pass 제거)
+    PRESCRIPTION_PRE = "ps"
+
+    def __str__(self) -> str:
+        return str(self.value)
 
 
 # 감사 로그 액션 코드
@@ -53,6 +59,7 @@ class FileStatus:
     OCR_FAILED = "OCR_FAILED"
     VERIFIED = "VERIFIED"
     FILTERED = "FILTERED"
+    EXCEL = "EXCEL"   # Excel import stub (파일 없음, OCR pending 제외)
 
 
 # 환자 등록 상태

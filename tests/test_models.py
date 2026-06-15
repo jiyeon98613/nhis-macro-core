@@ -52,7 +52,7 @@ class TestTableSeparation:
 
     ONBOARDING_TABLES = {
         "frequent_hospitals", "manufacturers", "vendors",
-        "product_catalog", "product_instances", "man_manager_list",
+        "man_manager_list",
         "operators", "audit_logs", "security_settings",
         "approvals", "document_templates", "document_fields",
     }
@@ -61,7 +61,8 @@ class TestTableSeparation:
         "system_logs", "patients", "patient_documents",
         "prescriptions", "sleep_reports", "contracts",
         "return_receipts", "tax_invoices", "receipts",
-        "consumables", "travels", "monthly_updates",
+        "product_catalog", "product_instances",
+        "travels", "monthly_updates", "monthly_records",
         "assigned_history", "care_history",
         "claims", "claim_docs", "patient_alerts", "extracted_data",
         "workflow_sessions", "workflow_step_logs",

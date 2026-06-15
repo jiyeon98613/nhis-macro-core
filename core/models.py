@@ -11,12 +11,13 @@ import uuid
 
 from sqlalchemy import (
     Column, Integer, String, DateTime, Date, ForeignKey,
-    Text, Float, Boolean, Index, UniqueConstraint, CheckConstraint,
+    Text, Float, Boolean, Index, UniqueConstraint, CheckConstraint, Enum as SQLEnum,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from core.db_manager import OnboardingBase, RuntimeBase
 from core.org_context import get_default_org_id
+from core.constants import DocType
 
 
 def _uuid_pk() -> Column:
@@ -82,36 +83,6 @@ class Vendor(OrgMixin, AuditMixin, OnboardingBase):
     email = Column(String)
     bc_doc_path = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
-
-
-class ProductCatalog(OrgMixin, AuditMixin, CreatedAtMixin, OnboardingBase):
-    """제조사별 제품 모델 마스터 (기기·소모품 통합 카탈로그)"""
-    __tablename__ = "product_catalog"
-    __table_args__ = (
-        UniqueConstraint("org_id", "man_id", "model_name", name="uq_catalog_org_man_model"),
-    )
-
-    catalog_id = _uuid_pk()
-    man_id = Column(String(36), ForeignKey("manufacturers.man_id"), nullable=True)
-    category = Column(String, nullable=False)   # DEVICE | CONSUMABLE (앱검증)
-    kind = Column(String, nullable=False)       # APAP/CPAP/BiPAP/MASK/TUBE/FILTER… (앱검증)
-    model_name = Column(String, nullable=False)
-    nhis_code = Column(String, nullable=True)
-    replace_cycle_days = Column(Integer, nullable=True)
-    default_price = Column(Integer, nullable=True)
-
-
-class ProductInstance(OrgMixin, AuditMixin, CreatedAtMixin, OnboardingBase):
-    """제품 개체 (시리얼 단위). 기존 devices/Device 대체."""
-    __tablename__ = "product_instances"
-
-    instance_id = _uuid_pk()
-    catalog_id = Column(String(36), ForeignKey("product_catalog.catalog_id"), nullable=False)
-    sn = Column(String, nullable=True)          # 소모품은 NULL 허용
-    dn = Column(String, nullable=True)
-    vendor_id = Column(String(36), ForeignKey("vendors.vendor_id"), nullable=True)
-    purchased_date = Column(Date, nullable=True)
-    manufactured_date = Column(Date, nullable=True)
 
 
 class ManManagerList(OrgMixin, AuditMixin, CreatedAtMixin, OnboardingBase):
@@ -280,7 +251,10 @@ class DocumentInfo(OrgMixin, AuditMixin, RuntimeBase):
 
     doc_id = _uuid_pk()
     pat_id = Column(String(36), ForeignKey("patients.pat_id"), nullable=True, index=True)
-    doc_type = Column(String, index=True)
+    doc_type = Column(
+        SQLEnum(DocType, values_callable=lambda e: [m.value for m in e], native_enum=False),
+        index=True,
+    )
     directory = Column(String)
     generated_filename = Column(String)
     issue_date = Column(String)
@@ -405,17 +379,35 @@ class Receipt(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
     attachment_path = Column(String)
 
 
-class Consumable(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
-    """소모품 지급 이력"""
-    __tablename__ = "consumables"
+class ProductCatalog(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
+    """제조사별 제품 모델 마스터 (기기·소모품 통합 카탈로그, runtime.db)"""
+    __tablename__ = "product_catalog"
+    __table_args__ = (
+        UniqueConstraint("org_id", "man_id", "model_name", name="uq_catalog_org_man_model"),
+        Index("ix_product_catalog_man_id", "man_id"),
+    )
 
-    c_id = _uuid_pk()
-    pat_id = Column(String(36), ForeignKey("patients.pat_id"), index=True)
-    c_type = Column(String)
-    c_detail_type = Column(String)
-    c_price = Column(Integer)
-    c_note = Column(String, nullable=True)
-    purchase_date = Column(DateTime)
+    catalog_id = _uuid_pk()
+    man_id = Column(String(36), nullable=True)   # cross-DB soft-ref → manufacturers
+    category = Column(String, nullable=False)   # DEVICE | CONSUMABLE (앱검증)
+    kind = Column(String, nullable=False)       # APAP/CPAP/BiPAP/MASK/TUBE/FILTER… (앱검증)
+    model_name = Column(String, nullable=False)
+    nhis_code = Column(String, nullable=True)
+    replace_cycle_days = Column(Integer, nullable=True)
+    default_price = Column(Integer, nullable=True)
+
+
+class ProductInstance(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
+    """제품 개체 (시리얼 단위). 기존 devices/Device 대체."""
+    __tablename__ = "product_instances"
+
+    instance_id = _uuid_pk()
+    catalog_id = Column(String(36), ForeignKey("product_catalog.catalog_id"), nullable=False)
+    sn = Column(String, nullable=True)          # 소모품은 NULL 허용
+    dn = Column(String, nullable=True)
+    vendor_id = Column(String(36), nullable=True, index=True)  # cross-DB soft-ref → vendors
+    purchased_date = Column(Date, nullable=True)
+    manufactured_date = Column(Date, nullable=True)
 
 
 class Travel(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
@@ -443,8 +435,9 @@ class AssignedHistory(OrgMixin, AuditMixin, RuntimeBase):
     )
 
     assigned_history_id = _uuid_pk()
-    # cross-DB soft-ref → product_instances.instance_id (onboarding.db)
-    instance_id = Column(String(36), nullable=False)
+    instance_id = Column(
+        String(36), ForeignKey("product_instances.instance_id"), nullable=False,
+    )
     pat_id = Column(String(36), ForeignKey("patients.pat_id"), nullable=False)
     ct_id = Column(String(36), ForeignKey("contracts.ct_id"), nullable=True)
     assigned_date = Column(Date, nullable=False)
@@ -468,7 +461,9 @@ class CareHistory(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
     )
 
     care_history_id = _uuid_pk()
-    instance_id = Column(String(36), nullable=False)   # cross-DB soft-ref
+    instance_id = Column(
+        String(36), ForeignKey("product_instances.instance_id"), nullable=False,
+    )
     care_type = Column(String, nullable=False)         # manufacturer_repaired/sterilized… (앱검증)
     care_date = Column(Date, nullable=True)
     resp_manufacturer_id = Column(String(36), nullable=True)   # cross-DB soft-ref
@@ -491,23 +486,37 @@ class MonthlyUpdate(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
     billing_month = Column(String(7), nullable=False)
     comp_status = Column(String, default="PASS")
     register_status = Column(String, default="ACTIVE")
-    tax_id = Column(String(36), ForeignKey("tax_invoices.ti_id"), nullable=True)
-    rcpt_id = Column(String(36), ForeignKey("receipts.rc_id"), nullable=True)
-    ps_id = Column(String(36), ForeignKey("prescriptions.ps_id"), nullable=True)
-    sr_id = Column(String(36), ForeignKey("sleep_reports.sr_id"), nullable=True)
-    ct_id = Column(String(36), ForeignKey("contracts.ct_id"), nullable=True)
-    rt_id = Column(String(36), ForeignKey("return_receipts.rt_id"), nullable=True)
-    assigned_history_id = Column(
-        String(36), ForeignKey("assigned_history.assigned_history_id"), nullable=True,
-    )
-    # DEPRECATED: 신규 흐름은 assigned_history_id 사용. 단계적 제거 예정(PLAN_ASSET_MODEL §7.6).
-    consumable_id = Column(String(36), ForeignKey("consumables.c_id"), nullable=True)
     split_claim_count = Column(Integer, default=1)
     claim_id_1 = Column(String(36), nullable=True)
     claim_id_2 = Column(String(36), nullable=True)
     claim_id_3 = Column(String(36), nullable=True)
     status = Column(String, default="PENDING")
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    records = relationship("MonthlyRecord", back_populates="monthly_update", lazy="select")
+
+
+class MonthlyRecord(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
+    """MonthlyUpdate ↔ 문서/배정/여행 M:N 정션 (PLAN_ASSET_MODEL §8.5)"""
+    __tablename__ = "monthly_records"
+    __table_args__ = (
+        CheckConstraint(
+            "((doc_id IS NOT NULL) + (assigned_history_id IS NOT NULL) + (travel_id IS NOT NULL)) = 1",
+            name="ck_monthly_record_exactly_one",
+        ),
+        UniqueConstraint("mu_id", "doc_id", name="uq_mr_mu_doc"),
+        UniqueConstraint("mu_id", "assigned_history_id", name="uq_mr_mu_assignment"),
+        UniqueConstraint("mu_id", "travel_id", name="uq_mr_mu_travel"),
+        Index("ix_monthly_records_mu_id", "mu_id"),
+    )
+
+    record_id = _uuid_pk()
+    mu_id = Column(String(36), ForeignKey("monthly_updates.mu_id"), nullable=False)
+    doc_id = Column(String(36), ForeignKey("patient_documents.doc_id"), nullable=True)
+    assigned_history_id = Column(
+        String(36), ForeignKey("assigned_history.assigned_history_id"), nullable=True,
+    )
+    travel_id = Column(String(36), ForeignKey("travels.t_id"), nullable=True)
+    monthly_update = relationship("MonthlyUpdate", back_populates="records")
 
 
 class OcrSession(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
