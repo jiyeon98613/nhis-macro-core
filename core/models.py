@@ -11,7 +11,7 @@ import uuid
 
 from sqlalchemy import (
     Column, Integer, String, DateTime, Date, ForeignKey,
-    Text, Float, Boolean, Index, UniqueConstraint,
+    Text, Float, Boolean, Index, UniqueConstraint, CheckConstraint,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -84,17 +84,46 @@ class Vendor(OrgMixin, AuditMixin, OnboardingBase):
     created_at = Column(DateTime, server_default=func.now())
 
 
-class Device(OrgMixin, AuditMixin, OnboardingBase):
-    """양압기 기기 마스터 정보"""
-    __tablename__ = "devices"
+class ProductCatalog(OrgMixin, AuditMixin, CreatedAtMixin, OnboardingBase):
+    """제조사별 제품 모델 마스터 (기기·소모품 통합 카탈로그)"""
+    __tablename__ = "product_catalog"
+    __table_args__ = (
+        UniqueConstraint("org_id", "man_id", "model_name", name="uq_catalog_org_man_model"),
+    )
 
-    dev_id = _uuid_pk()
-    man_id = Column(String(36), ForeignKey("manufacturers.man_id"))
-    vendor_id = Column(String(36), ForeignKey("vendors.vendor_id"))
-    serial_num = Column(String, unique=True, nullable=False)
-    device_type = Column(String)
-    model_name = Column(String)
-    created_at = Column(DateTime, server_default=func.now())
+    catalog_id = _uuid_pk()
+    man_id = Column(String(36), ForeignKey("manufacturers.man_id"), nullable=True)
+    category = Column(String, nullable=False)   # DEVICE | CONSUMABLE (앱검증)
+    kind = Column(String, nullable=False)       # APAP/CPAP/BiPAP/MASK/TUBE/FILTER… (앱검증)
+    model_name = Column(String, nullable=False)
+    nhis_code = Column(String, nullable=True)
+    replace_cycle_days = Column(Integer, nullable=True)
+    default_price = Column(Integer, nullable=True)
+
+
+class ProductInstance(OrgMixin, AuditMixin, CreatedAtMixin, OnboardingBase):
+    """제품 개체 (시리얼 단위). 기존 devices/Device 대체."""
+    __tablename__ = "product_instances"
+
+    instance_id = _uuid_pk()
+    catalog_id = Column(String(36), ForeignKey("product_catalog.catalog_id"), nullable=False)
+    sn = Column(String, nullable=True)          # 소모품은 NULL 허용
+    dn = Column(String, nullable=True)
+    vendor_id = Column(String(36), ForeignKey("vendors.vendor_id"), nullable=True)
+    purchased_date = Column(Date, nullable=True)
+    manufactured_date = Column(Date, nullable=True)
+
+
+class ManManagerList(OrgMixin, AuditMixin, CreatedAtMixin, OnboardingBase):
+    """제조사 담당자"""
+    __tablename__ = "man_manager_list"
+
+    man_manager_id = _uuid_pk()
+    man_id = Column(String(36), ForeignKey("manufacturers.man_id"), nullable=False)
+    name = Column(String, nullable=False)
+    phone = Column(String, nullable=False)
+    dept = Column(String, nullable=True)        # sales/repair/etc (앱검증)
+    email = Column(String, nullable=True)
 
 
 class Operator(OrgMixin, AuditMixin, CreatedAtMixin, OnboardingBase):
@@ -404,6 +433,51 @@ class Travel(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
     rt_id = Column(String(36), ForeignKey("return_receipts.rt_id"), nullable=True)
 
 
+class AssignedHistory(OrgMixin, AuditMixin, RuntimeBase):
+    """기기·소모품 배정 이력 (device_assignments/DeviceAssignment 대체)"""
+    __tablename__ = "assigned_history"
+    __table_args__ = (
+        Index("ix_ah_instance_id", "instance_id"),
+        Index("ix_ah_pat_id", "pat_id"),
+        Index("ix_ah_pat_assigned_date", "pat_id", "assigned_date"),
+    )
+
+    assigned_history_id = _uuid_pk()
+    # cross-DB soft-ref → product_instances.instance_id (onboarding.db)
+    instance_id = Column(String(36), nullable=False)
+    pat_id = Column(String(36), ForeignKey("patients.pat_id"), nullable=False)
+    ct_id = Column(String(36), ForeignKey("contracts.ct_id"), nullable=True)
+    assigned_date = Column(Date, nullable=False)
+    returned_date = Column(Date, nullable=True)
+    rt_id = Column(String(36), ForeignKey("return_receipts.rt_id"), nullable=True)
+
+
+class CareHistory(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
+    """기기·소모품 관리 이력 (세척·수리 등)"""
+    __tablename__ = "care_history"
+    __table_args__ = (
+        Index("ix_ch_instance_id", "instance_id"),
+        CheckConstraint(
+            "((resp_manufacturer_id IS NOT NULL) + (resp_vendor_id IS NOT NULL)) = 1",
+            name="ck_care_resp_exactly_one",
+        ),
+        CheckConstraint(
+            "((handler_operator_id IS NOT NULL) + (handler_man_manager_id IS NOT NULL)) = 1",
+            name="ck_care_handler_exactly_one",
+        ),
+    )
+
+    care_history_id = _uuid_pk()
+    instance_id = Column(String(36), nullable=False)   # cross-DB soft-ref
+    care_type = Column(String, nullable=False)         # manufacturer_repaired/sterilized… (앱검증)
+    care_date = Column(Date, nullable=True)
+    resp_manufacturer_id = Column(String(36), nullable=True)   # cross-DB soft-ref
+    resp_vendor_id = Column(String(36), nullable=True)         # cross-DB soft-ref
+    handler_operator_id = Column(String(36), nullable=True)    # cross-DB soft-ref
+    handler_man_manager_id = Column(String(36), nullable=True)  # cross-DB soft-ref
+    note = Column(String, nullable=True)
+
+
 class MonthlyUpdate(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
     """환자별 월간 변동 및 문서 연결 마스터"""
     __tablename__ = "monthly_updates"
@@ -423,6 +497,10 @@ class MonthlyUpdate(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
     sr_id = Column(String(36), ForeignKey("sleep_reports.sr_id"), nullable=True)
     ct_id = Column(String(36), ForeignKey("contracts.ct_id"), nullable=True)
     rt_id = Column(String(36), ForeignKey("return_receipts.rt_id"), nullable=True)
+    assigned_history_id = Column(
+        String(36), ForeignKey("assigned_history.assigned_history_id"), nullable=True,
+    )
+    # DEPRECATED: 신규 흐름은 assigned_history_id 사용. 단계적 제거 예정(PLAN_ASSET_MODEL §7.6).
     consumable_id = Column(String(36), ForeignKey("consumables.c_id"), nullable=True)
     split_claim_count = Column(Integer, default=1)
     claim_id_1 = Column(String(36), nullable=True)
@@ -539,23 +617,6 @@ class ClaimDoc(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
     __table_args__ = (
         UniqueConstraint("claim_id", "doc_type", "ps_id", "sr_id", name="uq_claim_doc"),
     )
-
-
-class DeviceAssignment(OrgMixin, AuditMixin, RuntimeBase):
-    """기기-환자 배정 이력"""
-    __tablename__ = "device_assignments"
-    __table_args__ = (
-        Index("ix_da_dev_id", "dev_id"),
-        Index("ix_da_pat_id", "pat_id"),
-    )
-
-    da_id = _uuid_pk()
-    dev_id = Column(String(36), nullable=False)
-    pat_id = Column(String(36), ForeignKey("patients.pat_id"), nullable=False)
-    ct_id = Column(String(36), ForeignKey("contracts.ct_id"), nullable=True)
-    assigned_at = Column(Date, nullable=False)
-    returned_at = Column(Date, nullable=True)
-    created_at = Column(DateTime, server_default=func.now())
 
 
 class PatientAlert(OrgMixin, AuditMixin, RuntimeBase):

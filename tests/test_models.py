@@ -52,7 +52,8 @@ class TestTableSeparation:
 
     ONBOARDING_TABLES = {
         "frequent_hospitals", "manufacturers", "vendors",
-        "devices", "operators", "audit_logs", "security_settings",
+        "product_catalog", "product_instances", "man_manager_list",
+        "operators", "audit_logs", "security_settings",
         "approvals", "document_templates", "document_fields",
     }
 
@@ -61,10 +62,11 @@ class TestTableSeparation:
         "prescriptions", "sleep_reports", "contracts",
         "return_receipts", "tax_invoices", "receipts",
         "consumables", "travels", "monthly_updates",
+        "assigned_history", "care_history",
         "claims", "claim_docs", "patient_alerts", "extracted_data",
         "workflow_sessions", "workflow_step_logs",
-        "patient_business_certificates", "device_assignments",
-        "excel_import_sessions",
+        "patient_business_certificates", "excel_import_sessions",
+        "ocr_sessions",
     }
 
     def test_onboarding_db_has_only_onboarding_tables(self, onboarding_session):
