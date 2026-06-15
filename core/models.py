@@ -432,6 +432,61 @@ class MonthlyUpdate(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class OcrSession(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
+    """PS/SR OCR workflow 다단계 진행 상태 추적 (Sprint 1, D2).
+
+    한 업로드 문서(doc_id)당 하나의 OCR 처리 세션. status 로 단계 진행을 추적한다.
+    상태 흐름:
+        bbox_pending → local_pending → mask_pending → external_pending
+                     → external_review → completed
+        (각 단계 거부 시 *_rejected, NAVER 실패 시 external_failed 로 종료)
+
+    ⚠️ cross-DB 참조 규약(기존 컨벤션 준수):
+        operators / frequent_hospitals 는 onboarding.db, OcrSession 은 runtime.db →
+        해당 참조는 ForeignKey 가 아니라 plain String(36) 으로 저장(soft ref).
+        runtime.db 내부(patient_documents/patients/prescriptions/sleep_reports/monthly_updates)만 진짜 FK.
+    """
+    __tablename__ = "ocr_sessions"
+
+    session_id = _uuid_pk()
+    # 업로드 문서 1건 = 세션 1건 (runtime FK)
+    doc_id = Column(String(36), ForeignKey("patient_documents.doc_id"),
+                    nullable=False, index=True)
+
+    status = Column(String(40), nullable=False, default="bbox_pending", index=True)
+
+    # Step1: 관리자 조정 박스 (원본 픽셀좌표 JSON). null이면 yaml 기본 + anchor transform 사용
+    adjusted_bboxes = Column(Text, nullable=True)
+
+    # Step3: 로컬 OCR(EasyOCR) 결과 + 관리자 교정 + 환자/병원 매칭
+    local_results = Column(Text, nullable=True)        # JSON {region: text}
+    local_corrections = Column(Text, nullable=True)    # JSON 관리자 수정분
+    local_reviewed_by = Column(String(36), nullable=True)   # → operators.op_id (onboarding, soft ref)
+    local_reviewed_at = Column(DateTime, nullable=True)
+    matched_pat_id = Column(String(36), ForeignKey("patients.pat_id"), nullable=True)
+    pat_match_score = Column(Float, nullable=True)
+    matched_fh_id = Column(String(36), nullable=True)       # → frequent_hospitals.fh_id (onboarding, soft ref)
+
+    # Step5: 마스킹
+    masked_image_path = Column(String, nullable=True)
+    mask_reviewed_by = Column(String(36), nullable=True)    # → operators.op_id (soft ref)
+    mask_reviewed_at = Column(DateTime, nullable=True)
+
+    # Step6: NAVER CLOVA 외부 OCR + 검토
+    external_called_at = Column(DateTime, nullable=True)
+    external_response_time = Column(Float, nullable=True)
+    external_results = Column(Text, nullable=True)          # JSON
+    external_corrections = Column(Text, nullable=True)
+    external_reviewed_by = Column(String(36), nullable=True)  # → operators.op_id (soft ref)
+    external_reviewed_at = Column(DateTime, nullable=True)
+
+    # 최종 산출물 추적 (runtime FK)
+    final_prescription_id = Column(String(36), ForeignKey("prescriptions.ps_id"), nullable=True)
+    final_sleep_report_id = Column(String(36), ForeignKey("sleep_reports.sr_id"), nullable=True)
+    final_mu_id = Column(String(36), ForeignKey("monthly_updates.mu_id"), nullable=True)  # MU 자동생성(D3) 추적
+    # updated_at / created_by / updated_by / deleted_at = AuditMixin, created_at = CreatedAtMixin (중복정의 금지)
+
+
 class Claim(OrgMixin, AuditMixin, RuntimeBase):
     """최종 청구 생성 데이터"""
     __tablename__ = "claims"
