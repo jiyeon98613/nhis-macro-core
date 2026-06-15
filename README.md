@@ -1,129 +1,136 @@
 # nhis-macro-core
 
-## 프로젝트 개요
-
-`nhis-macro-core`는 **보험 청구 업무를 보조하기 위한 반자동(semi-automated) 워크플로우 프레임워크**입니다.  
-이 저장소는 엑셀 기반 입력 데이터와 사용자 사전 준비 상태를 전제로,  
-**청구 업무의 처리 흐름과 실행 경계**를 정의하는 코어 레이어를 제공합니다.
-
-본 저장소는 실제 시스템 조작, 로그인 처리, 자동 입력(매크로) 로직을 포함하지 않으며,  
-구체적인 자동화 구현은 별도의 엔진 레이어에서 이루어지도록 설계되었습니다.
+인케어랩 CPAP 건강보험 청구 자동화 시스템의 **공유 코어 라이브러리**입니다.  
+SQLAlchemy ORM, 듀얼 SQLite 매니저, 워크플로우 프레임워크, 인증·감사 레이어를 제공하며,  
+실행 엔진(`nhis-macro-engine`)과 병원별 설정(`nhis-macro-config`)이 이 패키지를 import 합니다.
 
 ---
 
-## 전체 동작 개념
+## 역할
 
-본 프레임워크는 다음과 같은 전제를 기반으로 설계되었습니다.
+| 레이어 | 저장소 | 역할 |
+|--------|--------|------|
+| **Core** (본 저장소) | `nhis-macro-core` | DB 모델, 세션 매니저, 워크플로우, Alembic |
+| **Engine** | `nhis-macro-engine` | FastAPI, OCR, 청구 계산, RPA, CLI 데모 |
+| **Config** | `nhis-macro-config` | `config.yaml`, DB 파일 경로 |
 
-- 사용자는 사전에:
-  - 환자 정보 엑셀 파일
-  - 병원 정보 엑셀 파일
-  - 환자별 첨부 파일들을  
-    **정해진 폴더 구조**로 로컬 PC에 준비합니다.
-- 사용자는 보험 청구 시스템에 **직접 로그인**한 상태에서 프로그램을 실행합니다.
-- 본 시스템은 청구 프로세스 중 **“저장” 단계까지만 자동화**를 지원합니다.
-- 최종 점검 및 제출은:
-  - 별도의 단순 매크로
-  - 또는 사용자의 수기 확인 및 제출  
-  중 선택적으로 수행됩니다.
+운영 진입점은 `nhis-macro-engine/api/main.py`(FastAPI)이며, 본 저장소는 라이브러리로만 사용됩니다.
 
 ---
 
-## 설계 철학 (Design Philosophy)
+## DB 구조
 
-### 1. 반자동(Human-in-the-loop) 구조
+SQLite **2개**를 분리 운영합니다. 절대 혼용하지 않습니다.
 
-- 모든 청구 처리는 사용자 준비 상태를 전제로 실행됩니다.
-- 로그인, 인증서 선택, 최종 제출 행위는 자동화 대상에서 **의도적으로 제외**됩니다.
-- 시스템은 입력과 저장을 보조할 뿐, 최종 의사결정을 대체하지 않습니다.
+| DB | Base | 용도 | 주요 테이블 |
+|----|------|------|-------------|
+| `onboarding.db` | `OnboardingBase` | 기준정보 | `vendors`, `operators`, `document_templates`, `frequent_hospitals`, … |
+| `runtime.db` | `RuntimeBase` | 운영정보 | `patients`, `prescriptions`, `sleep_reports`, `claims`, `ocr_sessions`, … |
 
-### 2. 책임 분리
+- **PK/FK**: `String(36)` UUID (`str(uuid.uuid4())`)
+- **멀티테넌시**: 전 테이블 `org_id` (기본값은 `core.org_context`에서 config 주입)
+- **감사/소프트 삭제**: `updated_at`, `created_by`, `updated_by`, `deleted_at`
+- **스키마 SSoT**: `core/models.py` — 변경 시 `docs/db-schema.html`(루트 `nhis-macro/`)도 함께 갱신
 
-- 본 코어 프레임워크는 보험 청구 결과에 대한 판단이나 책임을 지지 않습니다.
-- 실제 업무 결과 및 법적 책임은 전적으로 사용자에게 있습니다.
-- 자동화 범위는 명확한 단계 경계로 제한됩니다.
+참조용 DDL: [`sql/schema.sql`](sql/schema.sql) (onboarding + runtime 전체).  
+실제 마이그레이션은 Alembic이 권위를 가집니다.
 
-### 3. 경계 기반 아키텍처
+```bash
+# onboarding.db
+alembic -x db=onboarding upgrade head
 
-- 워크플로우 제어(core)
-- 실제 자동 입력 및 화면 조작(engine)
-- 병원별 설정 및 규칙(config)  
-을 명확히 분리하여 설계합니다.
-
----
-
-## 이 저장소에 포함된 것
-
-- 전체 처리 흐름을 정의하는 워크플로우 구조
-- 단계(Step) 기반 실행 모델
-- 검증, 자동화, 로깅을 위한 **추상 인터페이스**
-- 실행 단계 간 전이 및 실패 처리 구조
-- 아키텍처 및 설계 의사결정 문서
-
----
-
-## 이 저장소에 포함되지 않은 것
-
-다음 항목들은 본 저장소에 **의도적으로 포함되지 않습니다.**
-
-- 실제 보험 시스템 화면 조작(매크로) 코드
-- 로그인, 인증서 선택, 비밀번호 처리 로직
-- 실무용 청구 규칙 및 통과 조건
-- 특정 보험 시스템에 종속된 필드 매핑 정보
-- 개인정보 저장, DB, 서버 통신 기능
-- 즉시 사용 가능한 배포용 애플리케이션
-
-본 저장소의 코드만으로는 실제 보험 청구 업무를 수행할 수 없습니다.
-
----
-
-## 워크플로우 범위 정의
-
-본 코어 프레임워크는 다음과 같은 단계 흐름을 전제로 합니다.
-
-```text
-LOAD_INPUT_FILES
- → PRE_VALIDATE
- → USER_CONFIRM
- → AUTO_INPUT
- → SAVE_ONLY
- → RESULT_LOG
+# runtime.db
+alembic -x db=runtime upgrade head
 ```
-- SAVE_ONLY 단계까지만 자동화 범위에 포함됩니다.
-- 제출(SUBMIT) 단계는 본 프로젝트의 범위를 벗어납니다.
+
+개발용 전체 재생성(테스트 DB만): `nhis-macro-engine/scripts/setup/recreate_db.py`
 
 ---
 
-## 저장소 구조
+## 디렉터리 구조
+
 ```text
-workflow/     # 워크플로우 흐름 및 상태 전이 정의
-interfaces/   # 검증, 자동화, 로깅을 위한 추상 인터페이스
-docs/         # 설계 의사결정 및 아키텍처 문서
+nhis-macro-core/
+├── core/
+│   ├── models.py           # ORM 모델 (OnboardingBase / RuntimeBase)
+│   ├── db_manager.py       # 듀얼 DB 싱글턴 `db`
+│   ├── org_context.py      # org_id 기본값 주입
+│   ├── auth.py / auth_manager.py / security.py
+│   ├── audit_listener.py   # 민감 테이블 → AuditLog 자동 기록
+│   ├── constants.py
+│   └── workflow/           # BaseStep, WorkflowRunner, StateMachine
+├── alembic/                # -x db=onboarding | runtime
+├── sql/
+│   └── schema.sql          # models.py 기준 참조 DDL
+└── tests/
 ```
 
 ---
 
-## 개인정보 및 보안 원칙
-- 본 프로젝트는 개인정보를 저장하거나 외부로 전송하지 않습니다.
-- 엑셀 파일 및 첨부 파일은 사용자 로컬 환경에만 존재합니다.
-- 로그에는 개인 식별 정보가 기록되지 않도록 설계됩니다.
-- 본 프레임워크는 개인정보 처리 시스템이 아닌 입력 보조 도구를 지향합니다.
+## 세션 사용법
+
+```python
+from core.db_manager import db
+
+db.initialize(onboarding_path, runtime_path)
+
+session = db.get_runtime_session()
+try:
+    # ORM 작업
+    session.commit()
+finally:
+    session.close()
+```
+
+- onboarding 세션: `db.get_onboarding_session()`
+- runtime 세션: `db.get_runtime_session()`
+- 감사 이벤트: `db.log_event()` 또는 `audit_listener` 자동 기록
+
+---
+
+## 워크플로우
+
+모든 Step은 `core.workflow.base_step.BaseStep`을 상속하고 `run(context) -> dict | None`을 구현합니다.
+
+```text
+LOAD_INPUT → PRE_VALIDATE → USER_CONFIRM → AUTO_INPUT → SAVE_ONLY → RESULT_LOG
+```
+
+`SAVE_ONLY`까지가 자동화 범위이며, 최종 제출(SUBMIT)은 사용자 또는 별도 매크로가 담당합니다.
+
+---
+
+## 개인정보·보안 원칙
+
+- **주민번호 원본 저장 금지** — `reg_num_front` / `reg_num_back` 분리 저장만 허용
+- 민감 테이블 변경은 `audit_logs`에 기록
+- OCR 외부 API 전송 전 PII 마스킹은 engine 레이어(`pii_masker`)에서 처리
+- cross-DB 참조(`operators`, `frequent_hospitals` ↔ runtime)는 FK 없이 `String(36)` soft ref
+
+---
+
+## 테스트
+
+```bash
+cd nhis-macro-core
+pytest tests/
+```
+
+DB 의존 테스트는 in-memory SQLite 또는 `tmp_path` fixture를 사용합니다.
+
+---
+
+## 관련 문서
+
+루트 `nhis-macro/` 저장소:
+
+- [`PRODUCT.md`](../PRODUCT.md) — 비즈니스 규칙·진행 상태 SSoT
+- [`docs/db-schema.html`](../docs/db-schema.html) — ERD 시각화
 
 ---
 
 ## 라이선스
-본 프로젝트는 MIT License 하에 배포됩니다.
-- 자유로운 사용, 수정, 배포, 상업적 이용이 가능합니다.
-- 단, 저작권 표시 및 라이선스 문구는 유지되어야 합니다.
-- 본 소프트웨어는 어떠한 보증도 제공하지 않습니다.
 
----
+MIT License — 자세한 내용은 [LICENSE](LICENSE)를 참고하세요.
 
-## 면책 조항 (Disclaimer)
-- 본 저장소는 아키텍처 및 개발 참고 목적으로 제공됩니다.
-- 완성형 보험 청구 시스템이 아니며,
-- 관련 법령·규정·약관 준수에 대한 책임은 사용자에게 있습니다.
-
----
-
-
+본 소프트웨어는 어떠한 보증도 제공하지 않으며, 건강보험 청구 결과에 대한 책임은 사용자에게 있습니다.
