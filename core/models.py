@@ -647,7 +647,15 @@ class PatientAlert(OrgMixin, AuditMixin, RuntimeBase):
 
 
 class ExtractedData(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
-    """OCR 추출 데이터 임시 버퍼"""
+    """문서(doc_id)별 OCR 필드 key-value 버퍼 — typed 테이블 저장 직전 정규화층.
+
+    역할 (2026-06-25, PLAN_P05_P06_PATIENT_MU_OCR §2.3):
+    - `ocr_sessions.local_results` / `external_results`: 세션 JSON (Hybrid OCR 워크플로·Appsmith 검토)
+    - `extracted_data`: finalize 시 `_sync_extracted_data()`가 채움 → `_save_typed_record()`가
+      여기서 읽어 prescriptions / sleep_reports / contracts 등 typed row 생성
+    - 레거시 scan/OCR 경로와 공유; `is_confirmed`는 구 scan 승인 호환
+    - 세션 JSON만으로 typed 저장을 대체하지 않음 (키 정규화·doc 단위 쿼리·하위 호환)
+    """
     __tablename__ = "extracted_data"
 
     data_id = _uuid_pk()
