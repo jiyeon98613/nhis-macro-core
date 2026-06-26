@@ -18,8 +18,12 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 
-# nhis-macro-core를 sys.path에 추가
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+# nhis-macro-core / nhis-macro-engine를 sys.path에 추가
+_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_ROOT / "nhis-macro-core"))
+sys.path.insert(0, str(_ROOT / "nhis-macro-engine"))
+
+import env_setup
 
 from core.db_manager import OnboardingBase, RuntimeBase
 
@@ -44,20 +48,11 @@ else:
 
 def get_url() -> str:
     """대상 DB의 SQLite URL을 반환합니다."""
-    # 환경 변수 또는 기본 경로
     import os
     if db_name == "runtime":
-        path = os.environ.get(
-            "RUNTIME_DB_PATH",
-            str(Path(__file__).resolve().parents[2]
-                / "nhis-macro-config" / "storage" / "program_data" / "runtime.db")
-        )
+        path = os.environ.get("RUNTIME_DB_PATH") or env_setup.get_runtime_db_path()
     else:
-        path = os.environ.get(
-            "ONBOARDING_DB_PATH",
-            str(Path(__file__).resolve().parents[2]
-                / "nhis-macro-config" / "storage" / "program_data" / "onboarding.db")
-        )
+        path = os.environ.get("ONBOARDING_DB_PATH") or env_setup.get_onboarding_db_path()
     return f"sqlite:///{path}"
 
 
