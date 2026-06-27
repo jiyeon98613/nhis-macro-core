@@ -17,7 +17,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from core.db_manager import OnboardingBase, RuntimeBase
 from core.org_context import get_default_org_id
-from core.constants import DocType
+from core.constants import DocType, PatientStatus, OCR_SESSION_STATUS_VALUES
 
 
 def _uuid_pk() -> Column:
@@ -108,6 +108,7 @@ class Operator(OrgMixin, AuditMixin, CreatedAtMixin, OnboardingBase):
     email = Column(String(100))
     role = Column(String(20))
     is_active = Column(Integer, default=1)
+    last_login_at = Column(DateTime, nullable=True)
     security = relationship("SecuritySetting", back_populates="operator", uselist=False)
 
 
@@ -201,6 +202,10 @@ class Patient(OrgMixin, AuditMixin, RuntimeBase):
     __table_args__ = (
         # 테넌트-로컬: 차트번호는 병원마다 독립 채번 → org 범위 내 유일
         UniqueConstraint("org_id", "chart_num", name="uq_patient_org_chart"),
+        CheckConstraint(
+            f"status IN ('{PatientStatus.ACTIVE}', '{PatientStatus.INACTIVE}', '{PatientStatus.SUSPENDED}')",
+            name="ck_patient_status",
+        ),
     )
 
     pat_id = _uuid_pk()
@@ -221,6 +226,8 @@ class Patient(OrgMixin, AuditMixin, RuntimeBase):
     pbc_id = Column(String(36), ForeignKey("patient_business_certificates.pbc_id"), nullable=True)
     is_auto_registered = Column(Boolean, default=False, nullable=False)
     # True = OCR 승인 시 자동생성 신환. chart_num = "AUTO-{pat_id[:8]}" (임시).
+    status = Column(String(20), nullable=False, default=PatientStatus.ACTIVE)
+    is_medicaid = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
 
 
@@ -484,8 +491,7 @@ class MonthlyUpdate(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
     mu_id = _uuid_pk()
     pat_id = Column(String(36), ForeignKey("patients.pat_id"), index=True)
     billing_month = Column(String(7), nullable=False)
-    comp_status = Column(String, default="PASS")
-    register_status = Column(String, default="ACTIVE")
+    comp_status = Column(String, default="PENDING")
     split_claim_count = Column(Integer, default=1)
     claim_id_1 = Column(String(36), nullable=True)
     claim_id_2 = Column(String(36), nullable=True)
@@ -524,9 +530,8 @@ class OcrSession(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
 
     한 업로드 문서(doc_id)당 하나의 OCR 처리 세션. status 로 단계 진행을 추적한다.
     상태 흐름:
-        bbox_pending → local_pending → mask_pending → external_pending
-                     → external_review → completed
-        (각 단계 거부 시 *_rejected, NAVER 실패 시 external_failed 로 종료)
+        local_pending → mask_pending → external_review → completed
+        (외부 OCR 실패 시 external_failed, MU 경고 시 completed_mu_warning)
 
     ⚠️ cross-DB 참조 규약(기존 컨벤션 준수):
         operators / frequent_hospitals 는 onboarding.db, OcrSession 은 runtime.db →
@@ -534,13 +539,21 @@ class OcrSession(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
         runtime.db 내부(patient_documents/patients/prescriptions/sleep_reports/monthly_updates)만 진짜 FK.
     """
     __tablename__ = "ocr_sessions"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ("
+            + ", ".join(f"'{v}'" for v in OCR_SESSION_STATUS_VALUES)
+            + ")",
+            name="ck_ocr_session_status",
+        ),
+    )
 
     session_id = _uuid_pk()
     # 업로드 문서 1건 = 세션 1건 (runtime FK)
     doc_id = Column(String(36), ForeignKey("patient_documents.doc_id"),
                     nullable=False, index=True)
 
-    status = Column(String(40), nullable=False, default="bbox_pending", index=True)
+    status = Column(String(40), nullable=False, default="local_pending", index=True)
 
     # Step1: 관리자 조정 박스 (원본 픽셀좌표 JSON). null이면 yaml 기본 + anchor transform 사용
     adjusted_bboxes = Column(Text, nullable=True)

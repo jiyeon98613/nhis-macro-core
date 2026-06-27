@@ -153,6 +153,7 @@ CREATE TABLE operators (
 	email VARCHAR(100), 
 	role VARCHAR(20), 
 	is_active INTEGER, 
+	last_login_at DATETIME, 
 	org_id VARCHAR, 
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, 
 	created_by VARCHAR(36), 
@@ -410,14 +411,6 @@ CREATE TABLE monthly_updates (
 	pat_id VARCHAR(36), 
 	billing_month VARCHAR(7) NOT NULL, 
 	comp_status VARCHAR, 
-	register_status VARCHAR, 
-	tax_id VARCHAR(36), 
-	rcpt_id VARCHAR(36), 
-	ps_id VARCHAR(36), 
-	sr_id VARCHAR(36), 
-	ct_id VARCHAR(36), 
-	rt_id VARCHAR(36), 
-	consumable_id VARCHAR(36), 
 	split_claim_count INTEGER, 
 	claim_id_1 VARCHAR(36), 
 	claim_id_2 VARCHAR(36), 
@@ -431,14 +424,7 @@ CREATE TABLE monthly_updates (
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP, 
 	PRIMARY KEY (mu_id), 
 	CONSTRAINT uq_mu_pat_month UNIQUE (pat_id, billing_month), 
-	FOREIGN KEY(pat_id) REFERENCES patients (pat_id), 
-	FOREIGN KEY(tax_id) REFERENCES tax_invoices (ti_id), 
-	FOREIGN KEY(rcpt_id) REFERENCES receipts (rc_id), 
-	FOREIGN KEY(ps_id) REFERENCES prescriptions (ps_id), 
-	FOREIGN KEY(sr_id) REFERENCES sleep_reports (sr_id), 
-	FOREIGN KEY(ct_id) REFERENCES contracts (ct_id), 
-	FOREIGN KEY(rt_id) REFERENCES return_receipts (rt_id), 
-	FOREIGN KEY(consumable_id) REFERENCES consumables (c_id)
+	FOREIGN KEY(pat_id) REFERENCES patients (pat_id)
 )
 
 
@@ -568,6 +554,8 @@ CREATE TABLE patients (
 	biz_num VARCHAR, 
 	pbc_id VARCHAR(36), 
 	is_auto_registered BOOLEAN NOT NULL, 
+	status VARCHAR(20) NOT NULL, 
+	is_medicaid BOOLEAN NOT NULL, 
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP, 
 	org_id VARCHAR, 
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, 

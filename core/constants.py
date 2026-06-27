@@ -63,11 +63,28 @@ class FileStatus:
     EXCEL = "EXCEL"   # Excel import stub (파일 없음, OCR pending 제외)
 
 
-# 환자 등록 상태
-class RegisterStatus:
+# 환자 lifecycle (Patient.status — PLAN_P05_P06 §2.1)
+class PatientStatus:
     ACTIVE = "ACTIVE"
     INACTIVE = "INACTIVE"
     SUSPENDED = "SUSPENDED"
+
+
+# 하위 호환 alias (MU.register_status 제거 후에도 import 깨짐 방지)
+RegisterStatus = PatientStatus
+
+
+# OcrSession.status (PLAN_P05_P06 §3.1)
+class OcrSessionStatus(str, Enum):
+    LOCAL_PENDING = "local_pending"
+    MASK_PENDING = "mask_pending"
+    EXTERNAL_REVIEW = "external_review"
+    EXTERNAL_FAILED = "external_failed"
+    COMPLETED = "completed"
+    COMPLETED_MU_WARNING = "completed_mu_warning"
+
+
+OCR_SESSION_STATUS_VALUES: tuple[str, ...] = tuple(s.value for s in OcrSessionStatus)
 
 
 # 운영자 역할
