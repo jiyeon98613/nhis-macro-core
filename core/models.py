@@ -325,7 +325,6 @@ class SleepReport(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
     linked_ps_id = Column(String(36), ForeignKey("prescriptions.ps_id"), nullable=True, index=True)
     report_month = Column(String(7), nullable=True)
     therapy_detail = Column(Text, nullable=True)
-    compliance_status = Column(String(20), nullable=True)
 
 
 class Contract(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
