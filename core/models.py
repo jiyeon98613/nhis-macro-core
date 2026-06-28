@@ -62,6 +62,7 @@ class Manufacturer(OrgMixin, AuditMixin, OnboardingBase):
     man_id = _uuid_pk()
     man_name = Column(String, nullable=False, unique=True)
     country = Column(String)
+    sr_alias = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
 
@@ -81,6 +82,7 @@ class Vendor(OrgMixin, AuditMixin, OnboardingBase):
     biz_type = Column(String)
     biz_item = Column(String)
     email = Column(String)
+    sr_alias = Column(String, nullable=True)
     bc_doc_path = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
@@ -310,12 +312,11 @@ class SleepReport(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
     report_start_date = Column(DateTime, nullable=True)
     report_end_date = Column(DateTime, nullable=True)
     device_serial = Column(String)
-    avg_usage_time = Column(Float)
+    avg_usage_time = Column(Integer, nullable=True)
     pressure_val1 = Column(Float)
     pressure_val2 = Column(Float)
     ahi = Column(Float)
     manufacturer = Column(String, nullable=True)
-    usage_days = Column(Integer, nullable=True)
     total_days = Column(Integer, nullable=True)
     over_4h_days = Column(Integer, nullable=True)
     mode = Column(String, nullable=True)
@@ -323,6 +324,7 @@ class SleepReport(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
     birth_date = Column(String, nullable=True)
     linked_ps_id = Column(String(36), ForeignKey("prescriptions.ps_id"), nullable=True, index=True)
     report_month = Column(String(7), nullable=True)
+    therapy_detail = Column(Text, nullable=True)
     compliance_status = Column(String(20), nullable=True)
 
 
@@ -445,7 +447,7 @@ class AssignedHistory(OrgMixin, AuditMixin, RuntimeBase):
     instance_id = Column(
         String(36), ForeignKey("product_instances.instance_id"), nullable=False,
     )
-    pat_id = Column(String(36), ForeignKey("patients.pat_id"), nullable=False)
+    pat_id = Column(String(36), ForeignKey("patients.pat_id"), nullable=True)
     ct_id = Column(String(36), ForeignKey("contracts.ct_id"), nullable=True)
     assigned_date = Column(Date, nullable=False)
     returned_date = Column(Date, nullable=True)
