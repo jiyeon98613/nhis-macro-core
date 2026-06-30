@@ -13,7 +13,7 @@ from sqlalchemy import (
     Column, Integer, String, DateTime, Date, ForeignKey,
     Text, Float, Boolean, Index, UniqueConstraint, CheckConstraint, Enum as SQLEnum,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 from sqlalchemy.sql import func
 from core.db_manager import OnboardingBase, RuntimeBase
 from core.org_context import get_default_org_id
@@ -271,6 +271,11 @@ class DocumentInfo(OrgMixin, AuditMixin, RuntimeBase):
     created_at = Column(DateTime, server_default=func.now())
 
 
+# CPAP 처방 상병 기본값 — OCR 미추출(null) 시 채움. 대부분의 PS가 동일 상병이라 안전한 기본값.
+DEFAULT_DISEASE_CODE = "G4730"
+DEFAULT_DISEASE_NAME = "폐쇄성 수면무호흡"
+
+
 class Prescription(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
     """처방전 상세 데이터 (PS)"""
     __tablename__ = "prescriptions"
@@ -293,11 +298,18 @@ class Prescription(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
     doctor_license = Column(String)
     hosp_name = Column(String)
     hosp_code = Column(String)
-    disease_code = Column(String, nullable=True)
-    disease_name = Column(String, nullable=True)
+    disease_code = Column(String, nullable=True, default=DEFAULT_DISEASE_CODE)
+    disease_name = Column(String, nullable=True, default=DEFAULT_DISEASE_NAME)
     serial_num = Column(String, nullable=True)
     superseded_by_ps_id = Column(String(36), ForeignKey("prescriptions.ps_id"), nullable=True)
     superseded_date = Column(Date, nullable=True)
+
+    @validates("disease_code", "disease_name")
+    def _fill_disease_default(self, key: str, value: str | None) -> str:
+        """OCR가 None/빈값을 명시적으로 넘겨도 기본 상병으로 채운다(컬럼 default는 미설정 시에만 적용되므로 보강)."""
+        if value:
+            return value
+        return DEFAULT_DISEASE_CODE if key == "disease_code" else DEFAULT_DISEASE_NAME
 
 
 class SleepReport(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
