@@ -295,7 +295,6 @@ class Prescription(OrgMixin, AuditMixin, CreatedAtMixin, RuntimeBase):
     hosp_code = Column(String)
     disease_code = Column(String, nullable=True)
     disease_name = Column(String, nullable=True)
-    phone = Column(String, nullable=True)
     serial_num = Column(String, nullable=True)
     specialist_num = Column(String, nullable=True)
     superseded_by_ps_id = Column(String(36), ForeignKey("prescriptions.ps_id"), nullable=True)
