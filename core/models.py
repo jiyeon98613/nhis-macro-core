@@ -449,6 +449,7 @@ class AssignedHistory(OrgMixin, AuditMixin, RuntimeBase):
         Index("ix_ah_instance_id", "instance_id"),
         Index("ix_ah_pat_id", "pat_id"),
         Index("ix_ah_pat_assigned_date", "pat_id", "assigned_date"),
+        Index("ix_ah_sr_id", "sr_id"),
     )
 
     assigned_history_id = _uuid_pk()
@@ -457,6 +458,7 @@ class AssignedHistory(OrgMixin, AuditMixin, RuntimeBase):
     )
     pat_id = Column(String(36), ForeignKey("patients.pat_id"), nullable=True)
     ct_id = Column(String(36), ForeignKey("contracts.ct_id"), nullable=True)
+    sr_id = Column(String(36), ForeignKey("sleep_reports.sr_id"), nullable=True)
     assigned_date = Column(Date, nullable=True)
     returned_date = Column(Date, nullable=True)
     rt_id = Column(String(36), ForeignKey("return_receipts.rt_id"), nullable=True)
